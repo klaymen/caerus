@@ -1,60 +1,68 @@
-# Lightweight Risk Manager (Excel -> HTML + JS)
+# Caerus Risk Manager
 
-This tool reads a risk register from an Excel file and generates:
+Caerus converts an Excel risk register into a single, shareable HTML dashboard.
 
-- `risk_dashboard.html`
+The generated dashboard includes modern filtering, sortable columns, KPI cards, tooltips, CSV export, and responsive layout.
 
-The dashboard is modern, lightweight, fully client-side, and delivered as one self-contained file for quick sharing.
+## What This Tool Generates
 
-## Features
+- sample input workbook: `sample_input/risk_register.xlsx`
+- dashboard output: `output/risk_dashboard.html`
 
-- Fast filtering for:
-  - Identified date range
-  - Severity
-  - Project
-  - Impact
-  - Probability
-  - Status
-  - Owner
-  - Category
-  - Trend
-  - Open only / Overdue only
-- Search across risk ID, title, description, owner, project, mitigation
-- Sortable columns
-- KPI cards (total, high+critical, open, overdue, average risk score)
-- Risk details drawer
-- Download currently filtered view as CSV
+The dashboard is self-contained (one HTML file).
 
-## Setup
+## Prerequisites
 
-1. Create a local virtual environment and install dependencies:
+- Python 3.10+
+- Terminal access
+
+## Quick Start (Anyone Can Run)
+
+1. Open a terminal in this project folder.
+2. Create a virtual environment.
+3. Install dependencies.
+4. Generate sample data and dashboard.
+5. Open the HTML output in a browser.
+
+macOS/Linux:
 
 ```bash
-/opt/homebrew/bin/python3 -m venv .venv
+python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-```
-
-2. Generate sample input and dashboard:
-
-```bash
 .venv/bin/python risk_manager_generator.py --create-sample
 ```
 
-This creates:
+Windows (PowerShell):
 
-- `sample_input/risk_register.xlsx`
+```powershell
+python -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt
+.venv\Scripts\python risk_manager_generator.py --create-sample
+```
+
+Then open:
+
 - `output/risk_dashboard.html`
 
-The sample Excel includes two sheets:
+## Use Your Own Excel File
 
-- `Risk Register` with example risks
-- `How To Fill` with field-by-field instructions, required flags, and allowed option values
+Run with your file path:
 
-3. Open `output/risk_dashboard.html` in your browser.
+macOS/Linux:
 
-## Use your own Excel file
+```bash
+.venv/bin/python risk_manager_generator.py --input your_file.xlsx --output-dir output
+```
 
-Your sheet can use these columns (aliases are accepted):
+Windows (PowerShell):
+
+```powershell
+.venv\Scripts\python risk_manager_generator.py --input your_file.xlsx --output-dir output
+```
+
+## Excel Input Format
+
+The generator accepts common aliases, but these canonical fields are supported:
 
 - Risk ID
 - Title
@@ -72,19 +80,69 @@ Your sheet can use these columns (aliases are accepted):
 - Mitigation
 - Trend
 
-Run:
+Required (must contain at least one populated value):
+
+- Risk ID
+- Title
+- Project
+- Severity
+- Impact
+- Identified Date
+
+Date format recommendation:
+
+- `YYYY-MM-DD`
+
+## Sample Workbook Details
+
+`sample_input/risk_register.xlsx` includes 2 sheets:
+
+- `Risk Register`: ready-to-run example records
+- `How To Fill`: formatted guide with required fields and allowed options/examples
+
+## Dashboard Features
+
+- Filters for date, severity, project, impact, probability, status, owner, category, trend
+- Quick filters for open-only and overdue-only
+- Search across ID/title/description/owner/project/mitigation
+- Sort by clicking table headers
+- KPI cards including Average Risk Score
+- Tooltip explanations for key fields and metrics
+- Row detail panel for full risk context
+- Download filtered results as CSV
+
+## Command Reference
+
+Create sample workbook and dashboard:
 
 ```bash
-.venv/bin/python risk_manager_generator.py --input your_file.xlsx --output-dir output
+risk_manager_generator.py --create-sample
 ```
 
-## Suggested additional filters
+Generate dashboard from specific file:
 
-Beyond your requested filters (date, severity, project, impact), the tool includes:
+```bash
+risk_manager_generator.py --input <excel_file> --output-dir <folder>
+```
 
-- Probability (likelihood)
-- Status (open/in progress/closed)
-- Owner (accountability)
-- Category (technology/security/legal/people/etc.)
-- Trend (improving/stable/worsening)
-- Open-only and overdue-only quick views
+Arguments:
+
+- `--create-sample`: writes sample workbook before generating dashboard
+- `--input`: path to Excel input (default: `sample_input/risk_register.xlsx`)
+- `--output-dir`: output directory (default: `output`)
+
+## Troubleshooting
+
+`ModuleNotFoundError: No module named pandas`
+
+- Use the virtual environment Python (`.venv/bin/python` or `.venv\Scripts\python`).
+- Reinstall dependencies from `requirements.txt`.
+
+Dashboard appears blank
+
+- Regenerate output and hard-refresh browser.
+- Confirm `output/risk_dashboard.html` was updated recently.
+
+Excel file is open/locked
+
+- Close the workbook in Excel before re-running generation.
