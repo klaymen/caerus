@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 
 import argparse
 import json
@@ -300,7 +300,7 @@ def html_template(embedded_js: str) -> str:
     }
 
     .hero-meta .stamp-value {
-      font-weight: 600;
+      font-weight: 400;
       color: #ffffff;
     }
 
