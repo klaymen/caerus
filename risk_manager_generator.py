@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+VERSION = "1.0.2"
+
 import argparse
 import json
 from datetime import datetime
@@ -2133,9 +2135,10 @@ def generate_dashboard(input_file: Path, output_dir: Path) -> None:
     js_path = output_dir / "risk_dashboard.js"
 
     from datetime import datetime
-    timestamp = datetime.now().strftime("Generated on %Y-%m-%d %H:%M:%S")
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    stamp = f"v{VERSION} \u00b7 Generated on {timestamp}"
     embedded_js = js_template(json.dumps(records, ensure_ascii=True, indent=2))
-    html = html_template(embedded_js).replace(">--</span>", f">{timestamp}</span>", 1)
+    html = html_template(embedded_js).replace(">--</span>", f">{stamp}</span>", 1)
     html_path.write_text(html, encoding="utf-8")
 
     # Remove legacy sidecar JS file to keep output as a single HTML artifact.
