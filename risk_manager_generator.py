@@ -15,20 +15,20 @@ from openpyxl.utils import get_column_letter
 
 
 SAFE_COLUMNS = {
-    "risk_id": ["risk id", "id", "risk", "riskid", "risk_id"],
+    "risk_id": ["risk id", "risk_id", "id"],
     "title": ["title", "risk title", "name"],
-    "description": ["description", "details", "risk description"],
-    "project": ["project", "project name", "initiative"],
-    "severity": ["severity", "priority", "risk severity"],
+    "description": ["description", "risk description", "details"],
+    "project": ["project", "program", "initiative"],
+    "severity": ["severity", "impact severity"],
     "impact": ["impact", "business impact"],
-    "probability": ["probability", "likelihood", "chance"],
+    "probability": ["probability", "likelihood"],
     "status": ["status", "state"],
-    "owner": ["owner", "risk owner", "assignee"],
-    "category": ["category", "domain", "risk category"],
-    "identified_date": ["identified date", "created", "created date", "identified"],
-    "due_date": ["due date", "target date", "target", "deadline"],
-    "last_review": ["last review", "review date", "last updated"],
-    "mitigation": ["mitigation", "mitigation plan", "response"],
+    "owner": ["owner", "risk owner", "responsible"],
+    "category": ["category", "risk category", "type"],
+    "identified_date": ["identified date", "identified_date", "date identified", "created"],
+    "due_date": ["due date", "due_date", "target date", "deadline"],
+    "last_review": ["last review", "last_review", "review date"],
+    "mitigation": ["mitigation", "mitigation plan", "response plan"],
     "trend": ["trend", "direction"],
 }
 
@@ -36,43 +36,36 @@ REQUIRED_COLUMNS = ["risk_id", "title", "project", "severity", "impact", "identi
 DATE_COLUMNS = ["identified_date", "due_date", "last_review"]
 
 
-def normalize(name: str) -> str:
-    return " ".join(str(name).strip().lower().replace("_", " ").split())
+def normalize(text: str) -> str:
+    return " ".join(str(text).strip().lower().replace("_", " ").split())
 
 
 def map_columns(df: pd.DataFrame) -> pd.DataFrame:
-    normalized_to_original = {normalize(col): col for col in df.columns}
-    renamed: Dict[str, str] = {}
+    normalized_cols = {col: normalize(col) for col in df.columns}
+    rename_map: Dict[str, str] = {}
 
-    for safe_name, aliases in SAFE_COLUMNS.items():
-        source = None
-        for alias in aliases:
-            if alias in normalized_to_original:
-                source = normalized_to_original[alias]
+    for target, aliases in SAFE_COLUMNS.items():
+        alias_set = {normalize(a) for a in aliases}
+        for original, norm in normalized_cols.items():
+            if norm in alias_set:
+                rename_map[original] = target
                 break
-        if source:
-            renamed[source] = safe_name
 
-    output = df.rename(columns=renamed).copy()
+    mapped = df.rename(columns=rename_map).copy()
 
-    for safe_name in SAFE_COLUMNS:
-        if safe_name not in output.columns:
-            output[safe_name] = ""
+    for required in REQUIRED_COLUMNS:
+        if required not in mapped.columns:
+            mapped[required] = ""
 
-    missing = [col for col in REQUIRED_COLUMNS if output[col].astype(str).str.strip().eq("").all()]
-    if missing:
-        readable = ", ".join(missing)
-        raise ValueError(
-            f"Missing required data in columns: {readable}. "
-            "Expected at least one populated value per required column."
-        )
+    for column in SAFE_COLUMNS.keys():
+        if column not in mapped.columns:
+            mapped[column] = ""
 
-    return output[list(SAFE_COLUMNS.keys())]
+    return mapped[list(SAFE_COLUMNS.keys())]
 
 
 def serialize_records(df: pd.DataFrame) -> List[dict]:
     prepared = df.copy()
-
     for col in DATE_COLUMNS:
         prepared[col] = pd.to_datetime(prepared[col], errors="coerce")
 
@@ -119,10 +112,136 @@ def html_template(embedded_js: str) -> str:
       --header-gradient: linear-gradient(135deg, #2c3e6b 0%, #3b5998 100%);
     }
 
+    body.dark {
+      --bg: #0f1623;
+      --surface: #1a2438;
+      --surface-soft: #1e2c42;
+      --text: #e2e8f2;
+      --muted: #8fa3bc;
+      --accent: #5b7fd4;
+      --border: #2a3a52;
+      --shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
+      --header-gradient: linear-gradient(135deg, #1a2438 0%, #253558 100%);
+    }
+
+    body.dark .risk-map-panel,
+    body.dark .exposure-panel,
+    body.dark .warning-panel {
+      background: var(--surface-soft);
+      border-color: var(--border);
+    }
+
+    body.dark .section-title { color: var(--text); }
+
+    body.dark .exposure-panel h2,
+    body.dark .warning-panel h2 {
+      color: var(--text);
+    }
+
+    body.dark .exposure-panel-sub,
+    body.dark .warning-panel-sub {
+      color: var(--muted);
+    }
+
+    body.dark .exposure-bar-bg {
+      background: var(--border);
+    }
+
+    body.dark .mh-gauge-detail,
+    body.dark .mh-overdue-id,
+    body.dark .mh-overdue-days,
+    body.dark .mh-gap-total,
+    body.dark .mh-legend {
+      color: var(--muted);
+    }
+
+    body.dark .mh-overdue-title,
+    body.dark .mh-gap-label,
+    body.dark .mh-gauge-pct {
+      color: var(--text);
+    }
+
+    body.dark .mh-gap-bar {
+      background: var(--border);
+    }
+
+    body.dark .mh-divider {
+      border-color: var(--border);
+    }
+
+    body.dark .field.is-active label { color: #7fa8e8; }
+
+    body.dark .field.is-active input,
+    body.dark .field.is-active select {
+      background: var(--surface-soft);
+      color: var(--text);
+    }
+
+    body.dark .stat-card {
+      background: var(--surface-soft);
+      border-color: var(--border);
+    }
+
+    body.dark .stat-label { color: var(--muted); }
+    body.dark .stat-value { color: var(--text); }
+
+    body.dark .detail-header { border-color: var(--border); }
+    body.dark .detail .k { color: var(--muted); }
+
+    body.dark tr:hover td { background: #1e2c42; }
+    body.dark tr.is-selected td { background: #1e3358; }
+
+    body.dark .axis-corner,
+    body.dark .axis-label,
+    body.dark .axis-row-label {
+      background: var(--surface-soft);
+      border-color: var(--border);
+      color: var(--muted);
+    }
+
+    body.dark th {
+      background: #1a2a42;
+      color: var(--text);
+    }
+
+    body.dark .btn-primary {
+      background: #2e5fb0;
+    }
+
+    body.dark .btn-secondary {
+      background: var(--surface-soft);
+      border-color: var(--border);
+      color: var(--text);
+    }
+
+    /* Risk matrix dark zones */
+    body.dark .risk-cell.risk-low-zone      { background: #1a5e36; }
+    body.dark .risk-cell.risk-medium-zone   { background: #7a5a08; }
+    body.dark .risk-cell.risk-high-zone     { background: #8c3d0a; }
+    body.dark .risk-cell.risk-critical-zone { background: #941414; }
+    body.dark .risk-cell-count { color: #ffffff; }
+
+    /* Severity pills dark */
+    body.dark .sev-critical { background: #941414; color: #ffbcbc; }
+    body.dark .sev-high     { background: #8c3d0a; color: #ffc99a; }
+    body.dark .sev-medium   { background: #7a5a08; color: #f5e08a; }
+    body.dark .sev-low      { background: #1a5e36; color: #90eaaa; }
+
+    /* Project Exposure Ranking dark */
+    body.dark .exposure-item {
+      background: #1a2a42;
+      border-color: var(--border);
+    }
+    body.dark .exposure-project { color: var(--text); }
+    body.dark .exposure-score   { color: #8fb8f0; }
+    body.dark .exposure-meta    { color: var(--muted); }
+    body.dark .exposure-bar     { background: var(--border); }
+
     * { box-sizing: border-box; }
 
     body {
       margin: 0;
+      padding-left: 52px;
       min-height: 100vh;
       font-family: -apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
       color: var(--text);
@@ -293,6 +412,30 @@ def html_template(embedded_js: str) -> str:
       box-shadow: 0 0 0 3px rgba(59, 89, 152, 0.18);
     }
 
+    .field.is-active label {
+      color: #163a7a;
+      font-weight: 800;
+    }
+
+    .field.is-active label::after {
+      content: "ACTIVE";
+      margin-left: 6px;
+      padding: 1px 6px;
+      border-radius: 999px;
+      background: #163a7a;
+      color: #f4f8ff;
+      font-size: 0.6rem;
+      letter-spacing: 0.08em;
+      line-height: 1.4;
+    }
+
+    .field.is-active input,
+    .field.is-active select {
+      border-color: #2e5fb0;
+      box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.28);
+      background: #eef4ff;
+    }
+
     .actions {
       display: flex;
       flex-wrap: wrap;
@@ -320,6 +463,408 @@ def html_template(embedded_js: str) -> str:
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 10px;
       padding: 18px;
+    }
+
+    .analytics {
+      padding: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      align-items: stretch;
+    }
+
+    .section-title {
+      margin: 0 0 12px;
+      font-size: 1rem;
+      font-weight: 700;
+      color: #26364f;
+    }
+
+    .risk-map-panel {
+      background: var(--surface-soft);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 10px;
+      display: grid;
+      gap: 6px;
+      max-width: 100%;
+      min-height: 100%;
+      height: 100%;
+    }
+
+    .risk-map-grid {
+      display: grid;
+      grid-template-columns: 112px repeat(5, minmax(42px, 1fr));
+      gap: 4px;
+      align-items: stretch;
+    }
+
+    .exposure-panel {
+      background: linear-gradient(180deg, #fbfcfe 0%, #f4f7fb 100%);
+      border: 1px solid #c6d1e1;
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: grid;
+      align-content: start;
+      min-height: 100%;
+    }
+
+    .exposure-panel > div {
+      width: 100%;
+      height: 100%;
+      display: grid;
+      align-content: start;
+    }
+
+    .exposure-panel h2 {
+      margin: 0 0 8px;
+      font-size: 1rem;
+      color: #31435f;
+    }
+
+    .exposure-panel-sub {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 10px;
+    }
+
+    .exposure-list {
+      display: grid;
+      gap: 9px;
+      width: 100%;
+    }
+
+    .exposure-empty {
+      color: var(--muted);
+      font-size: 0.86rem;
+      border: 1px dashed #c8d3e4;
+      border-radius: 10px;
+      background: #f7faff;
+      padding: 10px;
+    }
+
+    .exposure-item {
+      border: 1px solid #d4dced;
+      background: #f8fbff;
+      border-radius: 10px;
+      padding: 9px;
+      display: grid;
+      gap: 6px;
+    }
+
+    .exposure-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: baseline;
+    }
+
+    .exposure-project {
+      font-size: 0.86rem;
+      color: #1f355b;
+      font-weight: 700;
+    }
+
+    .exposure-score {
+      font-size: 0.82rem;
+      color: #2f4c7d;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .exposure-meta {
+      color: #5a6e8f;
+      font-size: 0.75rem;
+    }
+
+    .exposure-bar {
+      height: 7px;
+      border-radius: 999px;
+      background: #e4ebf7;
+      overflow: hidden;
+    }
+
+    .exposure-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #5377bb 0%, #2e5fb0 100%);
+    }
+
+    .warning-panel {
+      background: linear-gradient(180deg, #fbfcfe 0%, #f4f7fb 100%);
+      border: 1px dashed #c6d1e1;
+      border-radius: var(--radius-md);
+      padding: 14px;
+      display: grid;
+      align-content: start;
+      gap: 4px;
+    }
+
+    .warning-panel h2 {
+      margin: 0 0 2px;
+      font-size: 1rem;
+      color: #31435f;
+    }
+
+    .warning-panel-sub {
+      color: var(--muted);
+      font-size: 0.78rem;
+      margin-bottom: 10px;
+    }
+
+    .mh-panel {
+      display: grid;
+      gap: 12px;
+    }
+
+    .mh-section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #31435f;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 5px;
+    }
+
+    .mh-gauge-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .mh-gauge-svg {
+      width: 58px;
+      height: 58px;
+      flex-shrink: 0;
+    }
+
+    .mh-gauge-text {
+      display: grid;
+      gap: 2px;
+    }
+
+    .mh-gauge-pct {
+      font-size: 1.5rem;
+      font-weight: 800;
+      color: #1f355b;
+      line-height: 1;
+    }
+
+    .mh-gauge-detail {
+      font-size: 0.7rem;
+      color: var(--muted);
+      line-height: 1.3;
+    }
+
+    .mh-gauge-empty {
+      font-size: 0.78rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .mh-overdue-list {
+      display: grid;
+      gap: 4px;
+    }
+
+    .mh-overdue-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 5px;
+    }
+
+    .mh-overdue-id {
+      color: var(--muted);
+      font-size: 0.69rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .mh-overdue-title {
+      color: #1f355b;
+      font-size: 0.77rem;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .mh-overdue-days {
+      color: #b93030;
+      font-size: 0.69rem;
+      white-space: nowrap;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .mh-overdue-empty {
+      font-size: 0.77rem;
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .mh-gap-rows {
+      display: grid;
+      gap: 4px;
+    }
+
+    .mh-gap-row {
+      display: grid;
+      grid-template-columns: 66px 1fr 22px;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .mh-gap-label {
+      font-size: 0.71rem;
+      color: #1f355b;
+      font-weight: 600;
+    }
+
+    .mh-gap-bar {
+      height: 7px;
+      border-radius: 4px;
+      background: #e8edf5;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .mh-gap-fill-covered {
+      background: #2e5fb0;
+    }
+
+    .mh-gap-fill-gap {
+      background: #e2b5b5;
+    }
+
+    .mh-gap-total {
+      font-size: 0.67rem;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .mh-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 2px 0;
+    }
+
+    .mh-legend {
+      font-size: 0.68rem;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 7px;
+    }
+
+    .mh-legend-swatch {
+      display: inline-block;
+      width: 9px;
+      height: 9px;
+      border-radius: 2px;
+      vertical-align: middle;
+    }
+
+    .axis-corner,
+    .axis-label,
+    .axis-row-label,
+    .risk-cell {
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      min-height: 48px;
+      padding: 5px;
+    }
+
+    .axis-corner,
+    .axis-label,
+    .axis-row-label {
+      background: #eef3fb;
+      color: #4c5b72;
+      font-size: 0.72rem;
+      font-weight: 700;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+
+    .axis-row-label {
+      min-height: 56px;
+    }
+
+    .axis-corner.is-filter,
+    .axis-label.is-filter,
+    .axis-row-label.is-filter,
+    .risk-cell.is-filter {
+      cursor: pointer;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+
+    .axis-corner.is-filter:hover,
+    .axis-label.is-filter:hover,
+    .axis-row-label.is-filter:hover,
+    .risk-cell.is-filter:hover {
+      transform: translateY(-1px);
+      border-color: #9eb2d7;
+      box-shadow: 0 4px 12px rgba(59, 89, 152, 0.12);
+    }
+
+    .axis-corner.is-active,
+    .axis-label.is-active,
+    .axis-row-label.is-active {
+      border-color: #2e5fb0;
+      box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.28), 0 6px 14px rgba(28, 60, 119, 0.2);
+      background: #dbe8ff;
+      color: #132f61;
+      transform: translateY(-1px);
+    }
+
+    .risk-cell.is-active {
+      border-color: #2e5fb0;
+      box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.3), 0 6px 14px rgba(28, 60, 119, 0.24);
+      transform: translateY(-1px);
+    }
+
+    .axis-name {
+      line-height: 1.1;
+    }
+
+    .axis-value {
+      font-size: 0.66rem;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0.02em;
+      color: #2f4c7d;
+      opacity: 0.86;
+    }
+
+    .risk-cell {
+      background: #ffffff;
+      display: grid;
+      gap: 0;
+      align-content: center;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .risk-cell.risk-low-zone { background: #bbf7d0; }
+    .risk-cell.risk-medium-zone { background: #fef08a; }
+    .risk-cell.risk-high-zone { background: #fed7aa; }
+    .risk-cell.risk-critical-zone { background: #fca5a5; }
+
+    .risk-cell-count {
+      font-size: 1.35rem;
+      font-weight: 800;
+      color: #223046;
+      line-height: 1;
+    }
+
+    .risk-map-note {
+      color: var(--muted);
+      font-size: 0.8rem;
     }
 
     .stat-card {
@@ -398,6 +943,23 @@ def html_template(embedded_js: str) -> str:
       transform: translateX(2px);
     }
 
+    tbody tr.is-selected {
+      background: #e4eeff;
+    }
+
+    tbody tr.is-selected td {
+      box-shadow: inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
+    }
+
+    tbody tr.is-selected td:first-child {
+      box-shadow: inset 4px 0 0 #2e5fb0, inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
+    }
+
+    tbody tr.is-selected:hover {
+      background: #dce8ff;
+      transform: translateX(2px);
+    }
+
     .pill {
       display: inline-flex;
       align-items: center;
@@ -409,10 +971,10 @@ def html_template(embedded_js: str) -> str:
       text-transform: uppercase;
     }
 
-    .sev-critical { background: #fee2e2; color: #991b1b; }
-    .sev-high { background: #ffedd5; color: #9a3412; }
-    .sev-medium { background: #fef9c3; color: #854d0e; }
-    .sev-low { background: #dcfce7; color: #166534; }
+    .sev-critical { background: #fca5a5; color: #7f1d1d; }
+    .sev-high { background: #fdba74; color: #7c2d12; }
+    .sev-medium { background: #fde047; color: #713f12; }
+    .sev-low { background: #86efac; color: #14532d; }
 
     .drawer {
       border: 1px solid var(--border);
@@ -426,6 +988,22 @@ def html_template(embedded_js: str) -> str:
     .drawer h2 {
       margin: 0;
       font-size: 1.1rem;
+    }
+
+    .detail-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+
+    .detail-risk-id {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: #49617f;
+      white-space: nowrap;
     }
 
     .detail-grid {
@@ -461,9 +1039,96 @@ def html_template(embedded_js: str) -> str:
       color: var(--muted);
       font-size: 0.83rem;
       display: flex;
-      justify-content: space-between;
+      justify-content: flex-start;
       gap: 8px;
       flex-wrap: wrap;
+    }
+
+    /* ── Sidebar ────────────────────────────────────────────────────────────── */
+    .sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 52px;
+      background: linear-gradient(180deg, #2c3e6b 0%, #1e2d50 100%);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: 8px 0 10px;
+      z-index: 100;
+      box-shadow: 2px 0 10px rgba(0, 0, 0, 0.18);
+    }
+
+    .sidebar-top,
+    .sidebar-bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .sidebar-logo {
+      padding: 6px 0 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0.85;
+      color: #fff;
+    }
+
+    .sidebar-logo:hover { opacity: 1; background: transparent !important; }
+
+    .nav-item {
+      width: 38px;
+      height: 38px;
+      border: none;
+      background: transparent;
+      border-radius: 10px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(255, 255, 255, 0.55);
+      transition: background 0.15s, color 0.15s;
+      position: relative;
+    }
+
+    .nav-item svg { pointer-events: none; }
+
+    .nav-item:hover,
+    .nav-item.is-active {
+      background: rgba(255, 255, 255, 0.13);
+      color: #ffffff;
+    }
+
+    .nav-item::after {
+      content: attr(data-tip);
+      position: absolute;
+      left: calc(100% + 10px);
+      top: 50%;
+      transform: translateY(-50%);
+      background: #1a2438;
+      color: #e2e8f2;
+      font-size: 0.73rem;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      white-space: nowrap;
+      padding: 4px 9px;
+      border-radius: 6px;
+      pointer-events: none;
+      z-index: 200;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.28);
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+
+    .nav-item:hover::after { opacity: 1; }
+
+    .nav-divider {
+      width: 26px;
+      border: none;
+      border-top: 1px solid rgba(255, 255, 255, 0.12);
+      margin: 4px 0;
     }
 
     @media (max-width: 820px) {
@@ -471,19 +1136,48 @@ def html_template(embedded_js: str) -> str:
       .hero { padding: 14px; flex-direction: column; align-items: flex-start; }
       .hero-meta { align-items: flex-start; }
       .filters { padding: 14px; }
-      .stats, .table-wrap { padding: 14px; }
+      .stats, .analytics, .table-wrap { padding: 14px; }
+      .analytics { grid-template-columns: 1fr; }
+      .risk-map-grid { grid-template-columns: 96px repeat(5, minmax(42px, 1fr)); gap: 4px; }
       .stat-value { font-size: 1.5rem; }
+      .sidebar { width: 44px; }
+      body { padding-left: 44px; }
     }
   </style>
 </head>
 <body>
+  <nav class=\"sidebar\" id=\"sidebar\" aria-label=\"Main navigation\">
+    <div class=\"sidebar-top\">
+      <button class=\"nav-item sidebar-logo\" id=\"scrollTop\" data-tip=\"Back to top\" aria-label=\"Scroll to top\">
+        <svg width=\"22\" height=\"22\" viewBox=\"0 0 16 16\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">
+          <path fill-rule=\"evenodd\" clip-rule=\"evenodd\" d=\"M15 1H1V15H15V1ZM8 9.5C8.82843 9.5 9.5 8.82843 9.5 8C9.5 7.17157 8.82843 6.5 8 6.5C7.17157 6.5 6.5 7.17157 6.5 8C6.5 8.82843 7.17157 9.5 8 9.5Z\" fill=\"#fff\"/>
+        </svg>
+      </button>
+      <button class=\"nav-item\" data-target=\"section-filters\" data-tip=\"Filters\" aria-label=\"Scroll to filters\">
+        <svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><polygon points=\"22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3\"/></svg>
+      </button>
+      <button class=\"nav-item\" data-target=\"stats\" data-tip=\"Overview\" aria-label=\"Scroll to overview\">
+        <svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"12\" width=\"4\" height=\"9\"/><rect x=\"10\" y=\"7\" width=\"4\" height=\"14\"/><rect x=\"17\" y=\"3\" width=\"4\" height=\"18\"/></svg>
+      </button>
+      <button class=\"nav-item\" data-target=\"section-analytics\" data-tip=\"Analytics\" aria-label=\"Scroll to analytics\">
+        <svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\"/></svg>
+      </button>
+      <button class=\"nav-item\" data-target=\"section-table\" data-tip=\"Risk Table\" aria-label=\"Scroll to risk table\">
+        <svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18\"/></svg>
+      </button>
+    </div>
+    <div class=\"sidebar-bottom\">
+      <button class=\"nav-item\" id=\"themeToggle\" data-tip=\"Night mode\" aria-label=\"Toggle night mode\">
+        <svg class=\"icon-moon\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z\"/></svg>
+        <svg class=\"icon-sun\" width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" style=\"display:none\"><circle cx=\"12\" cy=\"12\" r=\"5\"/><line x1=\"12\" y1=\"1\" x2=\"12\" y2=\"3\"/><line x1=\"12\" y1=\"21\" x2=\"12\" y2=\"23\"/><line x1=\"4.22\" y1=\"4.22\" x2=\"5.64\" y2=\"5.64\"/><line x1=\"18.36\" y1=\"18.36\" x2=\"19.78\" y2=\"19.78\"/><line x1=\"1\" y1=\"12\" x2=\"3\" y2=\"12\"/><line x1=\"21\" y1=\"12\" x2=\"23\" y2=\"12\"/><line x1=\"4.22\" y1=\"19.78\" x2=\"5.64\" y2=\"18.36\"/><line x1=\"18.36\" y1=\"5.64\" x2=\"19.78\" y2=\"4.22\"/></svg>
+      </button>
+    </div>
+  </nav>
   <main class=\"layout\">
     <section class=\"hero\">
       <div class=\"hero-brand\">
-        <svg class=\"logo-triangle\" viewBox=\"0 0 24 24\" aria-hidden=\"true\" focusable=\"false\">
-          <path d=\"M12 3L22 20.5H2L12 3Z\" fill=\"none\" stroke=\"#ffffff\" stroke-width=\"1.8\" />
-          <rect x=\"11\" y=\"8\" width=\"2\" height=\"7\" rx=\"1\" fill=\"#ffffff\" />
-          <circle cx=\"12\" cy=\"17.5\" r=\"1.1\" fill=\"#ffffff\" />
+        <svg class=\"logo-triangle\" viewBox=\"0 0 16 16\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\" aria-hidden=\"true\" focusable=\"false\">
+          <path fill-rule=\"evenodd\" clip-rule=\"evenodd\" d=\"M15 1H1V15H15V1ZM8 9.5C8.82843 9.5 9.5 8.82843 9.5 8C9.5 7.17157 8.82843 6.5 8 6.5C7.17157 6.5 6.5 7.17157 6.5 8C6.5 8.82843 7.17157 9.5 8 9.5Z\" fill=\"#ffffff\"/>
         </svg>
         <h1>Caerus</h1>
       </div>
@@ -492,7 +1186,7 @@ def html_template(embedded_js: str) -> str:
       </div>
     </section>
 
-    <section class=\"surface filters\">
+    <section class=\"surface filters\" id=\"section-filters\">
       <div class=\"filters-grid\">
         <div class=\"field\"><label for=\"search\">Search</label><input id=\"search\" type=\"text\" placeholder=\"risk id, title, owner, mitigation\" /></div>
         <div class=\"field\"><label for=\"project\">Project</label><select id=\"project\"></select></div>
@@ -516,10 +1210,33 @@ def html_template(embedded_js: str) -> str:
 
     <section class=\"surface stats\" id=\"stats\"></section>
 
-    <section class=\"surface table-wrap\">
+    <section class=\"surface analytics\" id=\"section-analytics\">
+      <div class=\"risk-map-panel\">
+        <div>
+          <h2 class=\"section-title\">Risk map</h2>
+          <div class=\"risk-map-note\">Click a probability column, severity row, or matrix cell to filter the list.</div>
+        </div>
+        <div class=\"risk-map-grid\" id=\"riskMap\"></div>
+      </div>
+      <aside class=\"exposure-panel\">
+        <div>
+          <h2>Project Exposure Ranking</h2>
+          <div class=\"exposure-panel-sub\">Based on currently visible risks</div>
+          <div id=\"projectExposure\" class=\"exposure-list\"></div>
+        </div>
+      </aside>
+      <aside class=\"warning-panel\">
+        <div>
+          <h2>Mitigation Health</h2>
+          <div class=\"warning-panel-sub\">Based on currently visible risks</div>
+          <div id=\"mitigationHealth\" class=\"mh-panel\"></div>
+        </div>
+      </aside>
+    </section>
+
+    <section class=\"surface table-wrap\" id=\"section-table\">
       <div class=\"meta\">
         <span id=\"resultCount\">0 records</span>
-        <span id=\"generatedAt\"></span>
       </div>
       <div class=\"table-scroll\">
         <table>
@@ -529,10 +1246,10 @@ def html_template(embedded_js: str) -> str:
               <th data-sort=\"title\" title=\"Short risk summary. Click to sort.\">Title</th>
               <th data-sort=\"project\" title=\"Project or initiative impacted by the risk. Click to sort.\">Project</th>
               <th data-sort=\"severity\" title=\"Consequence level if the risk occurs. Click to sort.\">Severity</th>
-              <th data-sort=\"impact\" title=\"Type of impact area, such as security or financial. Click to sort.\">Impact</th>
               <th data-sort=\"probability\" title=\"Likelihood of occurrence. Click to sort.\">Probability</th>
               <th data-sort=\"status\" title=\"Current lifecycle state of the risk. Click to sort.\">Status</th>
               <th data-sort=\"owner\" title=\"Person accountable for tracking this risk. Click to sort.\">Owner</th>
+              <th data-sort=\"risk_score\" title=\"Calculated as Severity value x Probability value. Click to sort.\">Risk Score</th>
               <th data-sort=\"identified_date\" title=\"Date when the risk was first identified. Click to sort.\">Identified Date</th>
               <th data-sort=\"due_date\" title=\"Target mitigation date. Click to sort.\">Due Date</th>
             </tr>
@@ -559,8 +1276,21 @@ __EMBEDDED_JS__
 def js_template(records_json: str) -> str:
     return f"""const riskData = {records_json};
 
-const severityOrder = {{ critical: 4, high: 3, medium: 2, low: 1 }};
-const probabilityOrder = {{ veryhigh: 5, high: 4, medium: 3, low: 2, verylow: 1 }};
+const severityScale = [
+  {{ label: "Critical", value: 5, aliases: ["critical"] }},
+  {{ label: "Very High", value: 4, aliases: ["veryhigh", "very high", "vhigh"] }},
+  {{ label: "High", value: 3, aliases: ["high"] }},
+  {{ label: "Medium", value: 2, aliases: ["medium", "moderate"] }},
+  {{ label: "Low", value: 1, aliases: ["low"] }},
+];
+
+const probabilityScale = [
+  {{ label: "Very High", value: 5, aliases: ["veryhigh", "very high", "vhigh"] }},
+  {{ label: "High", value: 4, aliases: ["high"] }},
+  {{ label: "Medium", value: 3, aliases: ["medium", "moderate"] }},
+  {{ label: "Low", value: 2, aliases: ["low"] }},
+  {{ label: "Very Low", value: 1, aliases: ["verylow", "very low", "vlow"] }},
+];
 
 const state = {{
   sortKey: \"severity\",
@@ -589,15 +1319,38 @@ const els = {{
   resetFilters: document.getElementById(\"resetFilters\"),
   downloadCsv: document.getElementById(\"downloadCsv\"),
   stats: document.getElementById(\"stats\"),
+  riskMap: document.getElementById(\"riskMap\"),
+  projectExposure: document.getElementById(\"projectExposure\"),
+  mitigationHealth: document.getElementById(\"mitigationHealth\"),
   table: document.getElementById(\"riskTable\"),
   details: document.getElementById(\"details\"),
   resultCount: document.getElementById(\"resultCount\"),
-  generatedAt: document.getElementById(\"generatedAt\"),
-  headerTimestamp: document.getElementById(\"headerTimestamp\"),
 }};
 
 function normalize(v) {{
   return String(v || \"\").trim().toLowerCase();
+}}
+
+function compactNormalize(v) {{
+  return normalize(v).replace(/[\\s_-]+/g, \"\");
+}}
+
+function valueFromScale(scale, text) {{
+  const compact = compactNormalize(text);
+  const normalized = normalize(text);
+  const match = scale.find((item) =>
+    item.aliases.some((alias) => compactNormalize(alias) === compact || normalize(alias) === normalized)
+  );
+  return match ? match.value : 0;
+}}
+
+function canonicalLabel(scale, text) {{
+  const compact = compactNormalize(text);
+  const normalized = normalize(text);
+  const match = scale.find((item) =>
+    item.aliases.some((alias) => compactNormalize(alias) === compact || normalize(alias) === normalized)
+  );
+  return match ? match.label : (text || \"Unknown\");
 }}
 
 function parseDate(v) {{
@@ -613,15 +1366,24 @@ function isOpenRisk(status) {{
 }}
 
 function scoreRisk(risk) {{
-  const sev = severityOrder[normalize(risk.severity)] || 0;
-  const prob = probabilityOrder[normalize(risk.probability)] || 0;
+  const sev = valueFromScale(severityScale, risk.severity);
+  const prob = valueFromScale(probabilityScale, risk.probability);
   return sev * prob;
 }}
 
+function severityValue(text) {{
+  return valueFromScale(severityScale, text);
+}}
+
+function probabilityValue(text) {{
+  return valueFromScale(probabilityScale, text);
+}}
+
 function severityPill(severity) {{
-  const s = normalize(severity);
-  const cls = s === \"critical\" ? \"sev-critical\" : s === \"high\" ? \"sev-high\" : s === \"medium\" ? \"sev-medium\" : \"sev-low\";
-  return `<span class=\"pill ${{cls}}\">${{severity || \"Unknown\"}}</span>`;
+  const label = canonicalLabel(severityScale, severity);
+  const s = normalize(label);
+  const cls = s === \"critical\" ? \"sev-critical\" : s === \"very high\" || s === \"high\" ? \"sev-high\" : s === \"medium\" ? \"sev-medium\" : \"sev-low\";
+  return `<span class=\"pill ${{cls}}\">${{label}}</span>`;
 }}
 
 function uniqueValues(key) {{
@@ -630,12 +1392,44 @@ function uniqueValues(key) {{
 
 function fillSelect(id, label) {{
   const select = els[id];
-  const values = uniqueValues(id);
+  const values = id === "severity"
+    ? severityScale.map((item) => item.label)
+    : id === "probability"
+      ? probabilityScale.map((item) => item.label)
+      : uniqueValues(id);
   select.innerHTML = `<option value=\"\">All ${{label}}</option>` + values.map((v) => `<option value=\"${{v}}\">${{v}}</option>`).join(\"\");
 }}
 
 function initFilters() {{
   filterIds.forEach((id) => fillSelect(id, id.charAt(0).toUpperCase() + id.slice(1)));
+}}
+
+function isControlActive(el) {{
+  if (!el) return false;
+  const value = String(el.value || "").trim();
+  if (!value) return false;
+  if (el === els.openOnly || el === els.overdueOnly) return value !== "all";
+  return true;
+}}
+
+function updateActiveFilterStyles() {{
+  const controls = [
+    els.search, els.project, els.severity, els.impact, els.probability,
+    els.status, els.owner, els.category, els.trend,
+    els.dateFrom, els.dateTo, els.openOnly, els.overdueOnly
+  ];
+  controls.forEach((el) => {{
+    if (!el) return;
+    const field = el.closest(".field");
+    if (!field) return;
+    field.classList.toggle("is-active", isControlActive(el));
+  }});
+}}
+
+function applyMapFilter(severityLabel = "", probabilityLabel = "") {{
+  els.severity.value = severityLabel;
+  els.probability.value = probabilityLabel;
+  applyFilters();
 }}
 
 function inDateRange(v, from, to) {{
@@ -647,15 +1441,16 @@ function inDateRange(v, from, to) {{
 }}
 
 function applyFilters() {{
+  updateActiveFilterStyles();
   const search = normalize(els.search.value);
   const from = parseDate(els.dateFrom.value);
   const to = parseDate(els.dateTo.value);
 
   let filtered = riskData.filter((risk) => {{
     if (els.project.value && risk.project !== els.project.value) return false;
-    if (els.severity.value && risk.severity !== els.severity.value) return false;
+    if (els.severity.value && canonicalLabel(severityScale, risk.severity) !== els.severity.value) return false;
     if (els.impact.value && risk.impact !== els.impact.value) return false;
-    if (els.probability.value && risk.probability !== els.probability.value) return false;
+    if (els.probability.value && canonicalLabel(probabilityScale, risk.probability) !== els.probability.value) return false;
     if (els.status.value && risk.status !== els.status.value) return false;
     if (els.owner.value && risk.owner !== els.owner.value) return false;
     if (els.category.value && risk.category !== els.category.value) return false;
@@ -693,20 +1488,68 @@ function compareByState(a, b) {{
   const dir = state.sortDir === \"asc\" ? 1 : -1;
   const key = state.sortKey;
   if (key === \"severity\") {{
-    return ((severityOrder[normalize(a.severity)] || 0) - (severityOrder[normalize(b.severity)] || 0)) * dir;
+    return (severityValue(a.severity) - severityValue(b.severity)) * dir;
   }}
   if (key === \"probability\") {{
-    return ((probabilityOrder[normalize(a.probability)] || 0) - (probabilityOrder[normalize(b.probability)] || 0)) * dir;
+    return (probabilityValue(a.probability) - probabilityValue(b.probability)) * dir;
+  }}
+  if (key === \"risk_score\") {{
+    return (scoreRisk(a) - scoreRisk(b)) * dir;
   }}
   const av = (a[key] || \"\").toString();
   const bv = (b[key] || \"\").toString();
   return av.localeCompare(bv) * dir;
 }}
 
+function riskZone(score) {{
+  if (score >= 20) return "risk-critical-zone";
+  if (score >= 12) return "risk-high-zone";
+  if (score >= 6) return "risk-medium-zone";
+  return \"risk-low-zone\";
+}}
+
+function renderRiskMap(items) {{
+  const grid = [];
+  const activeSeverity = els.severity.value;
+  const activeProbability = els.probability.value;
+  const hasMapFilter = Boolean(activeSeverity || activeProbability);
+
+  grid.push(`<button class="axis-corner is-filter${{hasMapFilter ? " is-active" : ""}}" type="button" data-reset-filters="true">Severity / Probability</button>`);
+  [...probabilityScale].sort((a, b) => a.value - b.value).forEach((item) => {{
+    grid.push(`<button class="axis-label is-filter${{item.label === activeProbability ? " is-active" : ""}}" type="button" data-probability="${{item.label}}"><span class="axis-name">${{item.label}}</span><span class="axis-value">${{item.value}}</span></button>`);
+  }});
+
+  [...severityScale].sort((a, b) => b.value - a.value).forEach((severityItem) => {{
+    grid.push(`<button class="axis-row-label is-filter${{severityItem.label === activeSeverity ? " is-active" : ""}}" type="button" data-severity="${{severityItem.label}}"><span class="axis-name">${{severityItem.label}}</span><span class="axis-value">${{severityItem.value}}</span></button>`);
+    [...probabilityScale].sort((a, b) => a.value - b.value).forEach((probabilityItem) => {{
+      const cellItems = items.filter((risk) =>
+        severityValue(risk.severity) === severityItem.value && probabilityValue(risk.probability) === probabilityItem.value
+      );
+      const score = severityItem.value * probabilityItem.value;
+      grid.push(`
+        <button class="risk-cell is-filter ${{riskZone(score)}}${{severityItem.label === activeSeverity && probabilityItem.label === activeProbability ? " is-active" : ""}}" type="button" data-severity="${{severityItem.label}}" data-probability="${{probabilityItem.label}}">
+          <div class="risk-cell-count">${{cellItems.length}}</div>
+        </button>
+      `);
+    }});
+  }});
+
+  els.riskMap.innerHTML = grid.join("");
+  els.riskMap.querySelectorAll("[data-severity], [data-probability], [data-reset-filters]").forEach((node) => {{
+    node.addEventListener("click", () => {{
+      if (node.dataset.resetFilters !== undefined) {{
+        resetFilters();
+        return;
+      }}
+      applyMapFilter(node.dataset.severity || "", node.dataset.probability || "");
+    }});
+  }});
+}}
+
 function renderStats(items) {{
   const total = items.length;
   const open = items.filter((r) => isOpenRisk(r.status)).length;
-  const highPlus = items.filter((r) => [\"critical\", \"high\"].includes(normalize(r.severity))).length;
+  const highPlus = items.filter((r) => [\"critical\", \"very high\", \"high\"].includes(normalize(canonicalLabel(severityScale, r.severity)))).length;
   const overdue = items.filter((r) => {{
     const due = parseDate(r.due_date);
     return due && due < new Date() && isOpenRisk(r.status);
@@ -726,6 +1569,42 @@ function renderStats(items) {{
     .join(\"\");
 }}
 
+function renderProjectExposure(items) {{
+  if (!items.length) {{
+    els.projectExposure.innerHTML = `<div class=\"exposure-empty\">No data for the current filter set.</div>`;
+    return;
+  }}
+
+  const perProject = new Map();
+  items.forEach((risk) => {{
+    const project = risk.project || "Unassigned";
+    const bucket = perProject.get(project) || {{ project, exposure: 0, count: 0, highCount: 0 }};
+    const riskScore = scoreRisk(risk);
+    bucket.exposure += riskScore;
+    bucket.count += 1;
+    if (severityValue(risk.severity) >= 4) bucket.highCount += 1;
+    perProject.set(project, bucket);
+  }});
+
+  const ranked = [...perProject.values()].sort((a, b) => b.exposure - a.exposure || b.highCount - a.highCount || a.project.localeCompare(b.project));
+  const top = ranked.slice(0, 6);
+  const maxExposure = Math.max(...top.map((item) => item.exposure), 1);
+
+  els.projectExposure.innerHTML = top.map((item) => {{
+    const width = Math.max(8, Math.round((item.exposure / maxExposure) * 100));
+    return `
+      <article class=\"exposure-item\">
+        <div class=\"exposure-top\">
+          <div class=\"exposure-project\">${{item.project}}</div>
+          <div class=\"exposure-score\">Exposure ${{item.exposure}}</div>
+        </div>
+        <div class=\"exposure-meta\">${{item.count}} risk${{item.count === 1 ? \"\" : \"s\"}} | ${{item.highCount}} high/critical</div>
+        <div class=\"exposure-bar\"><div class=\"exposure-bar-fill\" style=\"width:${{width}}%\"></div></div>
+      </article>
+    `;
+  }}).join(\"\");
+}}
+
 function renderTable(items) {{
   if (!items.length) {{
     els.table.innerHTML = `<tr><td colspan=\"10\" class=\"empty\">No risks match the selected filters.</td></tr>`;
@@ -738,10 +1617,10 @@ function renderTable(items) {{
       <td>${{r.title || \"-\"}}</td>
       <td>${{r.project || \"-\"}}</td>
       <td>${{severityPill(r.severity)}}</td>
-      <td>${{r.impact || \"-\"}}</td>
-      <td>${{r.probability || \"-\"}}</td>
+      <td>${{canonicalLabel(probabilityScale, r.probability)}}</td>
       <td>${{r.status || \"-\"}}</td>
       <td>${{r.owner || \"-\"}}</td>
+      <td>${{scoreRisk(r) || \"-\"}}</td>
       <td>${{r.identified_date || \"-\"}}</td>
       <td>${{r.due_date || \"-\"}}</td>
     </tr>
@@ -753,16 +1632,26 @@ function renderTable(items) {{
       if (risk) renderDetail(risk);
     }});
   }});
+
+  highlightActiveRow();
+}}
+
+function highlightActiveRow() {{
+  els.table.querySelectorAll(\"tr[data-id]\").forEach((row) => {{
+    const selected = Boolean(state.active) && row.dataset.id === state.active;
+    row.classList.toggle(\"is-selected\", selected);
+    row.setAttribute(\"aria-selected\", selected ? \"true\" : \"false\");
+  }});
 }}
 
 function renderDetail(risk) {{
   state.active = risk.risk_id;
   const entries = [
-    [\"Risk ID\", risk.risk_id],
     [\"Project\", risk.project],
-    [\"Severity\", risk.severity],
+    [\"Severity\", `${{canonicalLabel(severityScale, risk.severity)}} (${{severityValue(risk.severity)}})`],
     [\"Impact\", risk.impact],
-    [\"Probability\", risk.probability],
+    [\"Probability\", `${{canonicalLabel(probabilityScale, risk.probability)}} (${{probabilityValue(risk.probability)}})`],
+    [\"Risk Score\", scoreRisk(risk)],
     [\"Status\", risk.status],
     [\"Owner\", risk.owner],
     [\"Category\", risk.category],
@@ -773,17 +1662,114 @@ function renderDetail(risk) {{
   ];
 
   els.details.innerHTML = `
-    <h2>${{risk.title || \"Untitled risk\"}}</h2>
+    <div class=\"detail-header\">
+      <h2>${{risk.title || \"Untitled risk\"}}</h2>
+      <div class=\"detail-risk-id\">${{risk.risk_id || \"-\"}}</div>
+    </div>
     <div class=\"detail-grid\">${{entries.map(([k, v]) => `<div class=\"detail\"><div class=\"k\">${{k}}</div><div>${{v || \"-\"}}</div></div>`).join(\"\")}}</div>
     <div class=\"detail\"><div class=\"k\">Description</div><div>${{risk.description || \"-\"}}</div></div>
     <div class=\"detail\"><div class=\"k\">Mitigation Plan</div><div>${{risk.mitigation || \"-\"}}</div></div>
   `;
+  highlightActiveRow();
 }}
 
 function render(items) {{
   renderStats(items);
+  renderRiskMap(riskData);
+  renderProjectExposure(items);
+  renderMitigationHealth(items);
   renderTable(items);
   els.resultCount.textContent = `${{items.length}} record${{items.length === 1 ? \"\" : \"s\"}}`;
+}}
+
+function renderMitigationHealth(items) {{
+  const el = els.mitigationHealth;
+  if (!el) return;
+  const now = new Date();
+
+  // ── Section 1: Coverage Score ───────────────────────────────────────────────
+  const highCrit = items.filter((r) => isOpenRisk(r.status) && severityValue(r.severity) >= 3);
+  const covered = highCrit.filter(
+    (r) => String(r.mitigation || \"\").trim() && String(r.owner || \"\").trim()
+  );
+  const pct = highCrit.length ? Math.round((covered.length / highCrit.length) * 100) : null;
+
+  const R = 28, circ = +(2 * Math.PI * R).toFixed(1);
+  const offset = pct === null ? circ : +(circ - (pct / 100) * circ).toFixed(1);
+  const gaugeColor = pct === null ? \"#c6d1e1\"
+    : pct >= 75 ? \"#2e5fb0\"
+    : pct >= 40 ? \"#c47a2e\"
+    : \"#b93030\";
+
+  const gaugeHtml = pct === null
+    ? `<div class=\"mh-gauge-empty\">No high+ open risks in current view.</div>`
+    : `<div class=\"mh-gauge-wrap\">
+        <svg class=\"mh-gauge-svg\" viewBox=\"0 0 70 70\">
+          <circle cx=\"35\" cy=\"35\" r=\"28\" fill=\"none\" stroke=\"#e8edf5\" stroke-width=\"8\"/>
+          <circle cx=\"35\" cy=\"35\" r=\"28\" fill=\"none\" stroke=\"${{gaugeColor}}\"
+            stroke-width=\"8\" stroke-dasharray=\"${{circ}}\" stroke-dashoffset=\"${{offset}}\"
+            stroke-linecap=\"round\" transform=\"rotate(-90 35 35)\"/>
+        </svg>
+        <div class=\"mh-gauge-text\">
+          <div class=\"mh-gauge-pct\">${{pct}}%</div>
+          <div class=\"mh-gauge-detail\">${{covered.length}} of ${{highCrit.length}} High+ severity<br>have plan + owner</div>
+        </div>
+      </div>`;
+
+  // ── Section 2: Overdue Actions ──────────────────────────────────────────────
+  const overdue = items
+    .filter((r) => {{ const due = parseDate(r.due_date); return isOpenRisk(r.status) && due && due < now; }})
+    .sort((a, b) => severityValue(b.severity) - severityValue(a.severity))
+    .slice(0, 5);
+
+  const overdueHtml = overdue.length
+    ? overdue.map((r) => {{
+        const daysAgo = Math.round((now - parseDate(r.due_date)) / 86400000);
+        return `<div class=\"mh-overdue-item\">
+          <span class=\"mh-overdue-id\">${{r.risk_id}}</span>
+          <span class=\"mh-overdue-title\" title=\"${{r.title}}\">${{r.title}}</span>
+          <span class=\"mh-overdue-days\">+${{daysAgo}}d</span>
+        </div>`;
+      }}).join(\"\")
+    : `<div class=\"mh-overdue-empty\">No overdue open risks.</div>`;
+
+  // ── Section 3: Gap Analysis ─────────────────────────────────────────────────
+  const tiers = severityScale.filter((s) => s.value >= 2);
+  const gapRows = tiers.map((tier) => {{
+    const inTier = items.filter((r) => severityValue(r.severity) === tier.value);
+    if (!inTier.length) return \"\";
+    const withMit = inTier.filter((r) => String(r.mitigation || \"\").trim());
+    const covPct = Math.round((withMit.length / inTier.length) * 100);
+    return `<div class=\"mh-gap-row\">
+      <div class=\"mh-gap-label\">${{tier.label}}</div>
+      <div class=\"mh-gap-bar\">
+        <div class=\"mh-gap-fill-covered\" style=\"width:${{covPct}}%\"></div>
+        <div class=\"mh-gap-fill-gap\" style=\"width:${{100 - covPct}}%\"></div>
+      </div>
+      <div class=\"mh-gap-total\">${{inTier.length}}</div>
+    </div>`;
+  }}).join(\"\");
+
+  el.innerHTML = `
+    <div>
+      <div class=\"mh-section-title\">Coverage Score</div>
+      ${{gaugeHtml}}
+    </div>
+    <hr class=\"mh-divider\">
+    <div>
+      <div class=\"mh-section-title\">Overdue Actions</div>
+      <div class=\"mh-overdue-list\">${{overdueHtml}}</div>
+    </div>
+    <hr class=\"mh-divider\">
+    <div>
+      <div class=\"mh-section-title\">Mitigation Gap by Severity</div>
+      <div class=\"mh-gap-rows\">${{gapRows || "<div class=\\'mh-overdue-empty\\'>No risks in current view.</div>"}}</div>
+      <span class=\"mh-legend\">
+        <span class=\"mh-legend-swatch\" style=\"background:#2e5fb0\"></span>covered
+        <span class=\"mh-legend-swatch\" style=\"background:#e2b5b5\"></span>missing
+      </span>
+    </div>
+  `;
 }}
 
 function resetFilters() {{
@@ -841,14 +1827,61 @@ function wire() {{
   }});
 }}
 
+function initSidebar() {{
+  // Scroll nav
+  document.getElementById("scrollTop").addEventListener("click", () => window.scrollTo({{ behavior: "smooth", top: 0 }}));
+
+  const navItems = document.querySelectorAll(".nav-item[data-target]");
+  navItems.forEach((btn) => {{
+    btn.addEventListener("click", () => {{
+      const target = document.getElementById(btn.dataset.target);
+      if (target) target.scrollIntoView({{ behavior: "smooth", block: "start" }});
+    }});
+  }});
+
+  // Scroll spy
+  const sectionIds = ["stats", "section-filters", "section-analytics", "section-table"];
+  const sections = sectionIds.map((id) => document.getElementById(id)).filter(Boolean);
+  const observer = new IntersectionObserver(
+    (entries) => {{
+      entries.forEach((entry) => {{
+        if (entry.isIntersecting) {{
+          navItems.forEach((btn) => btn.classList.remove("is-active"));
+          const active = document.querySelector(`.nav-item[data-target="${{entry.target.id}}"]`);
+          if (active) active.classList.add("is-active");
+        }}
+      }});
+    }},
+    {{ rootMargin: "-20% 0px -60% 0px", threshold: 0 }}
+  );
+  sections.forEach((s) => observer.observe(s));
+
+  // Dark mode
+  const toggle = document.getElementById("themeToggle");
+  const moon = toggle.querySelector(".icon-moon");
+  const sun = toggle.querySelector(".icon-sun");
+
+  function applyTheme(dark) {{
+    document.body.classList.toggle("dark", dark);
+    moon.style.display = dark ? "none" : "";
+    sun.style.display = dark ? "" : "none";
+    toggle.dataset.tip = dark ? "Light mode" : "Night mode";
+  }}
+
+  const saved = localStorage.getItem("caerus-theme");
+  applyTheme(saved === "dark");
+
+  toggle.addEventListener("click", () => {{
+    const isDark = !document.body.classList.contains("dark");
+    localStorage.setItem("caerus-theme", isDark ? "dark" : "light");
+    applyTheme(isDark);
+  }});
+}}
+
 function init() {{
   initFilters();
   wire();
-  const now = new Date();
-  const pad = (num) => String(num).padStart(2, "0");
-  const formatted = `${{now.getFullYear()}}-${{pad(now.getMonth() + 1)}}-${{pad(now.getDate())}} ${{pad(now.getHours())}}:${{pad(now.getMinutes())}}:${{pad(now.getSeconds())}}`;
-  els.generatedAt.textContent = `Generated on ${{formatted}}`;
-  els.headerTimestamp.textContent = `Generated on ${{formatted}}`;
+  initSidebar();
   applyFilters();
 }}
 
@@ -897,7 +1930,7 @@ def create_sample_excel(path: Path) -> None:
             "Title": "Single-point failure in reporting ETL",
             "Description": "Nightly pipeline has no parallel failover and delayed alerting.",
             "Project": "Phoenix",
-            "Severity": "High",
+          "Severity": "Very High",
             "Impact": "Operational",
             "Probability": "High",
             "Status": "Open",
@@ -1065,7 +2098,7 @@ def create_sample_excel(path: Path) -> None:
         ("Title", "Yes", "Short risk summary", "API outage during launch"),
         ("Description", "No", "Risk details and context", "What may happen and why"),
         ("Project", "Yes", "Project or initiative name", "Phoenix, Atlas, Orion, Nimbus"),
-        ("Severity", "Yes", "Consequence if risk occurs", "Critical, High, Medium, Low"),
+            ("Severity", "Yes", "Consequence if risk occurs", "Critical, Very High, High, Medium, Low"),
         ("Impact", "Yes", "Primary impact area", "Financial, Security, Compliance, Schedule, Operational"),
         ("Probability", "No", "Likelihood of occurrence", "VeryHigh, High, Medium, Low, VeryLow"),
         ("Status", "No", "Current state", "Open, In Progress, Mitigated, Closed, Resolved"),
@@ -1099,8 +2132,11 @@ def generate_dashboard(input_file: Path, output_dir: Path) -> None:
     html_path = output_dir / "risk_dashboard.html"
     js_path = output_dir / "risk_dashboard.js"
 
+    from datetime import datetime
+    timestamp = datetime.now().strftime("Generated on %Y-%m-%d %H:%M:%S")
     embedded_js = js_template(json.dumps(records, ensure_ascii=True, indent=2))
-    html_path.write_text(html_template(embedded_js), encoding="utf-8")
+    html = html_template(embedded_js).replace(">--</span>", f">{timestamp}</span>", 1)
+    html_path.write_text(html, encoding="utf-8")
 
     # Remove legacy sidecar JS file to keep output as a single HTML artifact.
     if js_path.exists():
