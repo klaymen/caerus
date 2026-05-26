@@ -73,6 +73,10 @@
       color: var(--text);
     }
 
+    body.dark .mh-gauge-svg circle:first-child {
+      stroke: var(--border);
+    }
+
     body.dark .mh-gap-bar {
       background: var(--border);
     }
@@ -99,9 +103,17 @@
 
     body.dark .detail-header { border-color: var(--border); }
     body.dark .detail .k { color: var(--muted); }
+    body.dark .detail { background: var(--surface-soft); border-color: var(--border); }
+    body.dark .detail-risk-id { color: var(--muted); }
+    body.dark .mh-section-title { color: var(--muted); }
+    body.dark .exposure-empty {
+      background: var(--surface-soft);
+      border-color: var(--border);
+      color: var(--muted);
+    }
 
     body.dark tr:hover td { background: #1e2c42; }
-    body.dark tr.is-selected td { background: #1e3358; }
+    body.dark tr.is-selected td { background: #192a44; }
 
     body.dark .axis-corner,
     body.dark .axis-label,
@@ -712,16 +724,15 @@
     .axis-row-label.is-filter,
     .risk-cell.is-filter {
       cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      transition: box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
     }
 
     .axis-corner.is-filter:hover,
     .axis-label.is-filter:hover,
     .axis-row-label.is-filter:hover,
     .risk-cell.is-filter:hover {
-      transform: translateY(-1px);
       border-color: #9eb2d7;
-      box-shadow: 0 4px 12px rgba(59, 89, 152, 0.12);
+      box-shadow: 0 4px 12px rgba(59, 89, 152, 0.18);
     }
 
     .axis-corner.is-active,
@@ -731,13 +742,11 @@
       box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.28), 0 6px 14px rgba(28, 60, 119, 0.2);
       background: #dbe8ff;
       color: #132f61;
-      transform: translateY(-1px);
     }
 
     .risk-cell.is-active {
       border-color: #2e5fb0;
       box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.3), 0 6px 14px rgba(28, 60, 119, 0.24);
-      transform: translateY(-1px);
     }
 
     .axis-name {
@@ -785,6 +794,8 @@
       border-radius: var(--radius-md);
       padding: 12px;
       min-height: 96px;
+      display: flex;
+      flex-direction: column;
     }
 
     .stat-card h3 {
@@ -793,9 +804,15 @@
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+    }
+
+    .stat-label-text {
+      display: block;
+      min-height: 2.3em;
+      line-height: 1.15;
     }
 
     .stat-value {
@@ -846,30 +863,23 @@
     }
 
     tbody tr {
-      transition: background 0.17s ease, transform 0.17s ease;
       cursor: pointer;
     }
 
-    tbody tr:hover {
-      background: #f8fafc;
-      transform: translateX(2px);
+    tbody tr:not(.is-selected):hover td {
+      background: rgba(59, 89, 152, 0.05);
     }
 
     tbody tr.is-selected {
-      background: #e4eeff;
+      background: #edf2ff;
     }
 
     tbody tr.is-selected td {
-      box-shadow: inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
+      box-shadow: inset 0 1px 0 #d0ddf7, inset 0 -1px 0 #d0ddf7;
     }
 
     tbody tr.is-selected td:first-child {
-      box-shadow: inset 4px 0 0 #2e5fb0, inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
-    }
-
-    tbody tr.is-selected:hover {
-      background: #dce8ff;
-      transform: translateX(2px);
+      box-shadow: inset 3px 0 0 #2e5fb0, inset 0 1px 0 #d0ddf7, inset 0 -1px 0 #d0ddf7;
     }
 
     .pill {
@@ -1055,6 +1065,146 @@
       .sidebar { width: 44px; }
       body { padding-left: 44px; }
     }
+
+    /* ── Type tabs ─────────────────────────────────────────────────────────── */
+    .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .type-tabs {
+      display: flex;
+      gap: 4px;
+    }
+
+    .type-tab {
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.14s, color 0.14s, border-color 0.14s;
+    }
+
+    .type-tab.is-active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .type-tab:hover:not(.is-active) {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    body.dark .type-tab { background: var(--surface-soft); border-color: var(--border); color: var(--muted); }
+    body.dark .type-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Column visibility ─────────────────────────────────────────────────── */
+    .col-toggle-wrap {
+      position: relative;
+    }
+
+    .btn-col-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.14s, color 0.14s;
+    }
+
+    .btn-col-toggle:hover { background: var(--border); color: var(--text); }
+
+    .col-panel {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      padding: 10px 14px;
+      min-width: 180px;
+      z-index: 50;
+      display: grid;
+      gap: 6px;
+    }
+
+    .col-panel.is-open { display: grid; }
+    .col-panel:not(.is-open) { display: none; }
+
+    .col-panel label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .col-panel label input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+
+    /* Hidden column helpers */
+    .table-wrap table.hide-col-risk_id th:nth-child(1),
+    .table-wrap table.hide-col-risk_id td:nth-child(1) { display: none; }
+    .table-wrap table.hide-col-title th:nth-child(2),
+    .table-wrap table.hide-col-title td:nth-child(2) { display: none; }
+    .table-wrap table.hide-col-project th:nth-child(3),
+    .table-wrap table.hide-col-project td:nth-child(3) { display: none; }
+    .table-wrap table.hide-col-severity th:nth-child(4),
+    .table-wrap table.hide-col-severity td:nth-child(4) { display: none; }
+    .table-wrap table.hide-col-probability th:nth-child(5),
+    .table-wrap table.hide-col-probability td:nth-child(5) { display: none; }
+    .table-wrap table.hide-col-status th:nth-child(6),
+    .table-wrap table.hide-col-status td:nth-child(6) { display: none; }
+    .table-wrap table.hide-col-owner th:nth-child(7),
+    .table-wrap table.hide-col-owner td:nth-child(7) { display: none; }
+    .table-wrap table.hide-col-risk_score th:nth-child(8),
+    .table-wrap table.hide-col-risk_score td:nth-child(8) { display: none; }
+    .table-wrap table.hide-col-identified_date th:nth-child(9),
+    .table-wrap table.hide-col-identified_date td:nth-child(9) { display: none; }
+    .table-wrap table.hide-col-due_date th:nth-child(10),
+    .table-wrap table.hide-col-due_date td:nth-child(10) { display: none; }
+    .table-wrap table.hide-col-impact th:nth-child(11),
+    .table-wrap table.hide-col-impact td:nth-child(11) { display: none; }
+    .table-wrap table.hide-col-category th:nth-child(12),
+    .table-wrap table.hide-col-category td:nth-child(12) { display: none; }
+    .table-wrap table.hide-col-last_review th:nth-child(13),
+    .table-wrap table.hide-col-last_review td:nth-child(13) { display: none; }
+    .table-wrap table.hide-col-mitigation th:nth-child(14),
+    .table-wrap table.hide-col-mitigation td:nth-child(14) { display: none; }
+    .table-wrap table.hide-col-trend th:nth-child(15),
+    .table-wrap table.hide-col-trend td:nth-child(15) { display: none; }
+    .table-wrap table.hide-col-description th:nth-child(16),
+    .table-wrap table.hide-col-description td:nth-child(16) { display: none; }
+
+    /* ── Opportunity pill ──────────────────────────────────────────────────── */
+    .pill-opportunity {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.73rem;
+      font-weight: 700;
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    body.dark .pill-opportunity { background: #064e35; color: #6ee7b7; }
   </style>
 </head>
 <body>
@@ -1094,7 +1244,7 @@
         <h1>Caerus</h1>
       </div>
       <div class="hero-meta">
-        <span class="stamp-value" id="headerTimestamp">v1.0.2 · Generated on 2026-05-18 21:20:11</span>
+        <span class="stamp-value" id="headerTimestamp">v1.0.3 · Generated on 2026-05-26 15:15:52</span>
       </div>
     </section>
 
@@ -1117,6 +1267,7 @@
       <div class="actions">
         <button class="btn btn-primary" id="resetFilters" type="button">Reset filters</button>
         <button class="btn btn-secondary" id="downloadCsv" type="button">Download filtered CSV</button>
+        <button class="btn btn-secondary" id="downloadAllCsv" type="button">Download all (Excel)</button>
       </div>
     </section>
 
@@ -1125,7 +1276,7 @@
     <section class="surface analytics" id="section-analytics">
       <div class="risk-map-panel">
         <div>
-          <h2 class="section-title">Risk map</h2>
+          <h2 class="section-title">Threat map</h2>
           <div class="risk-map-note">Click a probability column, severity row, or matrix cell to filter the list.</div>
         </div>
         <div class="risk-map-grid" id="riskMap"></div>
@@ -1148,7 +1299,39 @@
 
     <section class="surface table-wrap" id="section-table">
       <div class="meta">
-        <span id="resultCount">0 records</span>
+        <div class="type-tabs" id="typeTabs">
+          <button class="type-tab is-active" data-type="all">All</button>
+          <button class="type-tab" data-type="Threat">Threats</button>
+          <button class="type-tab" data-type="Opportunity">Opportunities</button>
+          <button class="type-tab" data-type="Highlights">Highlights</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span id="resultCount">0 records</span>
+          <div class="col-toggle-wrap" id="colToggleWrap">
+            <button class="btn-col-toggle" id="colToggleBtn" type="button" aria-label="Show/hide columns">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              Columns
+            </button>
+            <div class="col-panel" id="colPanel">
+              <label><input type="checkbox" data-col="risk_id"> Risk ID</label>
+              <label><input type="checkbox" data-col="title" checked> Title</label>
+              <label><input type="checkbox" data-col="project" checked> Project</label>
+              <label><input type="checkbox" data-col="severity" checked> Severity</label>
+              <label><input type="checkbox" data-col="probability" checked> Probability</label>
+              <label><input type="checkbox" data-col="status" checked> Status</label>
+              <label><input type="checkbox" data-col="owner"> Owner</label>
+              <label><input type="checkbox" data-col="risk_score" checked> Risk Score</label>
+              <label><input type="checkbox" data-col="identified_date"> Identified Date</label>
+              <label><input type="checkbox" data-col="due_date" checked> Due Date</label>
+              <label><input type="checkbox" data-col="impact"> Impact</label>
+              <label><input type="checkbox" data-col="category"> Category</label>
+              <label><input type="checkbox" data-col="last_review"> Last Review</label>
+              <label><input type="checkbox" data-col="mitigation"> Mitigation</label>
+              <label><input type="checkbox" data-col="trend"> Trend</label>
+              <label><input type="checkbox" data-col="description"> Description</label>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="table-scroll">
         <table>
@@ -1164,6 +1347,12 @@
               <th data-sort="risk_score" title="Calculated as Severity value x Probability value. Click to sort.">Risk Score</th>
               <th data-sort="identified_date" title="Date when the risk was first identified. Click to sort.">Identified Date</th>
               <th data-sort="due_date" title="Target mitigation date. Click to sort.">Due Date</th>
+              <th data-sort="impact" title="Consequence if the risk occurs. Click to sort.">Impact</th>
+              <th data-sort="category" title="Risk category. Click to sort.">Category</th>
+              <th data-sort="last_review" title="Date of last review. Click to sort.">Last Review</th>
+              <th data-sort="mitigation" title="Mitigation or response plan. Click to sort.">Mitigation</th>
+              <th data-sort="trend" title="Trend direction. Click to sort.">Trend</th>
+              <th data-sort="description" title="Full description. Click to sort.">Description</th>
             </tr>
           </thead>
           <tbody id="riskTable"></tbody>
@@ -1174,12 +1363,14 @@
         <div class="empty">Click a row to inspect full details and mitigation plan.</div>
       </aside>
     </section>
+
   </main>
 
   <script>
 const riskData = [
   {
-    "risk_id": "RISK-001",
+    "risk_id": "3CQ8MA",
+    "type": "Threat",
     "title": "API rate-limit breach during peak traffic",
     "description": "Expected product launch surge may overwhelm third-party payment APIs.",
     "project": "Phoenix",
@@ -1192,11 +1383,12 @@ const riskData = [
     "identified_date": "2026-03-19",
     "due_date": "2026-05-20",
     "last_review": "2026-05-03",
-    "mitigation": "Enable queue buffering, pre-warm workers, and add fallback payment provider.",
+    "mitigation": "",
     "trend": "Worsening"
   },
   {
-    "risk_id": "RISK-002",
+    "risk_id": "PXMSNP",
+    "type": "Threat",
     "title": "Unclear legal language in vendor addendum",
     "description": "Contract clause may expose liability on SLA penalties.",
     "project": "Atlas",
@@ -1213,11 +1405,12 @@ const riskData = [
     "trend": "Stable"
   },
   {
-    "risk_id": "RISK-003",
+    "risk_id": "X0I6Q8",
+    "type": "Threat",
     "title": "Single-point failure in reporting ETL",
     "description": "Nightly pipeline has no parallel failover and delayed alerting.",
     "project": "Phoenix",
-    "severity": "High",
+    "severity": "Very High",
     "impact": "Operational",
     "probability": "High",
     "status": "Open",
@@ -1230,7 +1423,8 @@ const riskData = [
     "trend": "Improving"
   },
   {
-    "risk_id": "RISK-004",
+    "risk_id": "IPIPK4",
+    "type": "Threat",
     "title": "Low sprint velocity due to key vacancy",
     "description": "One missing frontend engineer affects release commitments.",
     "project": "Nimbus",
@@ -1243,11 +1437,12 @@ const riskData = [
     "identified_date": "2026-04-01",
     "due_date": "2026-06-30",
     "last_review": "2026-05-08",
-    "mitigation": "Temporary contractor onboarding and scope reduction for non-critical features.",
+    "mitigation": "",
     "trend": "Stable"
   },
   {
-    "risk_id": "RISK-005",
+    "risk_id": "SQ9QJ5",
+    "type": "Threat",
     "title": "Dependency CVE in auth package",
     "description": "Newly published vulnerability affects currently deployed version.",
     "project": "Atlas",
@@ -1264,7 +1459,8 @@ const riskData = [
     "trend": "Worsening"
   },
   {
-    "risk_id": "RISK-006",
+    "risk_id": "MSTOUB",
+    "type": "Threat",
     "title": "Legacy data migration quality issues",
     "description": "Null and malformed legacy records fail strict schema checks.",
     "project": "Orion",
@@ -1281,7 +1477,8 @@ const riskData = [
     "trend": "Improving"
   },
   {
-    "risk_id": "RISK-007",
+    "risk_id": "BUEJT7",
+    "type": "Threat",
     "title": "Cloud cost overrun from idle clusters",
     "description": "Night and weekend autoscaling floor is too high across regions.",
     "project": "Nimbus",
@@ -1298,7 +1495,8 @@ const riskData = [
     "trend": "Stable"
   },
   {
-    "risk_id": "RISK-008",
+    "risk_id": "MX156T",
+    "type": "Threat",
     "title": "Delayed stakeholder approvals",
     "description": "Sign-offs from external partners often miss the planned windows.",
     "project": "Orion",
@@ -1313,6 +1511,104 @@ const riskData = [
     "last_review": "2026-02-01",
     "mitigation": "Introduced approval SLA dashboard and escalation path.",
     "trend": "Improving"
+  },
+  {
+    "risk_id": "8YD3L4",
+    "type": "Opportunity",
+    "title": "Early access to cloud volume discount tier",
+    "description": "Projected spend trajectory qualifies for a reserved-instance discount negotiation window opening in Q3.",
+    "project": "Nimbus",
+    "severity": "High",
+    "impact": "Financial",
+    "probability": "High",
+    "status": "Open",
+    "owner": "B. Lakatos",
+    "category": "FinOps",
+    "identified_date": "2026-04-10",
+    "due_date": "2026-07-15",
+    "last_review": "2026-05-10",
+    "mitigation": "Engage cloud account manager, model commitment tiers, and present business case to finance.",
+    "trend": "Improving"
+  },
+  {
+    "risk_id": "R4IH71",
+    "type": "Opportunity",
+    "title": "Strategic logistics partnership for Phoenix",
+    "description": "A tier-1 logistics provider has expressed intent to co-market and integrate with the Phoenix platform.",
+    "project": "Phoenix",
+    "severity": "Very High",
+    "impact": "Revenue",
+    "probability": "Medium",
+    "status": "In Progress",
+    "owner": "A. Nemeth",
+    "category": "Partnerships",
+    "identified_date": "2026-03-25",
+    "due_date": "2026-08-01",
+    "last_review": "2026-05-15",
+    "mitigation": "Assign partnership lead, draft MOU, and align product roadmap to integration requirements.",
+    "trend": "Improving"
+  },
+  {
+    "risk_id": "EWA4W5",
+    "type": "Opportunity",
+    "title": "Regulatory simplification in key compliance area",
+    "description": "Proposed amendment to data-residency rules could reduce Atlas compliance overhead significantly.",
+    "project": "Atlas",
+    "severity": "Medium",
+    "impact": "Compliance",
+    "probability": "Low",
+    "status": "Open",
+    "owner": "M. Farkas",
+    "category": "Legal",
+    "identified_date": "2026-02-28",
+    "due_date": "2026-09-30",
+    "last_review": "2026-04-18",
+    "mitigation": "Monitor regulatory updates, engage legal counsel, and prepare architecture adaptation plan.",
+    "trend": "Stable"
+  },
+  {
+    "risk_id": "0SU172",
+    "type": "Opportunity",
+    "title": "Open-source ETL library cuts pipeline build time",
+    "description": "A recently released open-source framework covers 70% of Orion ETL patterns and is already battle-tested.",
+    "project": "Orion",
+    "severity": "High",
+    "impact": "Schedule",
+    "probability": "High",
+    "status": "Open",
+    "owner": "D. Kovacs",
+    "category": "Technology",
+    "identified_date": "2026-05-05",
+    "due_date": "2026-06-20",
+    "last_review": "2026-05-20",
+    "mitigation": "Proof-of-concept sprint, security review of library, and incremental adoption plan.",
+    "trend": "Improving"
+  }
+];
+const highlightsData = [
+  {
+    "date": "2026-05-20",
+    "title": "Q2 Security Audit Passed",
+    "project": "Atlas",
+    "body": "Atlas completed its quarterly security audit with zero critical findings. All medium-severity items have remediation plans in place."
+  },
+  {
+    "date": "2026-05-12",
+    "title": "Auth CVE Patched Ahead of Schedule",
+    "project": "Atlas",
+    "body": "The auth package CVE was patched and deployed 4 days ahead of the due date. Secrets rotation completed with no service disruption."
+  },
+  {
+    "date": "2026-04-28",
+    "title": "Phoenix MVP Delivered On Time",
+    "project": "Phoenix",
+    "body": "The Phoenix minimum viable product was released to pilot customers on schedule. Initial feedback is positive with a 4.2/5 satisfaction score."
+  },
+  {
+    "date": "2026-04-05",
+    "title": "Orion ETL Reliability Up 18%",
+    "project": "Orion",
+    "body": "Following the active-passive failover implementation, the Orion reporting pipeline availability improved from 97.1% to 99.2% month-over-month."
   }
 ];
 
@@ -1336,6 +1632,7 @@ const state = {
   sortKey: "severity",
   sortDir: "desc",
   active: null,
+  typeFilter: "all",
 };
 
 const filterIds = [
@@ -1358,6 +1655,7 @@ const els = {
   overdueOnly: document.getElementById("overdueOnly"),
   resetFilters: document.getElementById("resetFilters"),
   downloadCsv: document.getElementById("downloadCsv"),
+  downloadAllCsv: document.getElementById("downloadAllCsv"),
   stats: document.getElementById("stats"),
   riskMap: document.getElementById("riskMap"),
   projectExposure: document.getElementById("projectExposure"),
@@ -1365,6 +1663,11 @@ const els = {
   table: document.getElementById("riskTable"),
   details: document.getElementById("details"),
   resultCount: document.getElementById("resultCount"),
+  typeTabs: document.getElementById("typeTabs"),
+  colToggleBtn: document.getElementById("colToggleBtn"),
+  colPanel: document.getElementById("colPanel"),
+  colToggleWrap: document.getElementById("colToggleWrap"),
+  tableEl: document.querySelector(".table-wrap table"),
 };
 
 function normalize(v) {
@@ -1469,6 +1772,14 @@ function updateActiveFilterStyles() {
 function applyMapFilter(severityLabel = "", probabilityLabel = "") {
   els.severity.value = severityLabel;
   els.probability.value = probabilityLabel;
+  // Switch to Threats tab so the table shows only threats matching the clicked cell.
+  if (els.typeTabs) {
+    els.typeTabs.querySelectorAll(".type-tab").forEach((b) => b.classList.remove("is-active"));
+    const threatTab = els.typeTabs.querySelector('.type-tab[data-type="Threat"]');
+    if (threatTab) threatTab.classList.add("is-active");
+    state.typeFilter = "Threat";
+    if (els.colToggleWrap) els.colToggleWrap.style.display = "";
+  }
   applyFilters();
 }
 
@@ -1482,11 +1793,24 @@ function inDateRange(v, from, to) {
 
 function applyFilters() {
   updateActiveFilterStyles();
+
+  // Highlights tab: use highlightsData with only the project filter applied.
+  if (state.typeFilter === "Highlights") {
+    if (els.details) { els.details.style.display = "none"; state.active = null; }
+    const proj = els.project ? els.project.value : "";
+    const filtered = highlightsData.filter((h) => !proj || h.project === proj);
+    renderHighlightsTable(filtered);
+    els.resultCount.textContent = `${filtered.length} record${filtered.length === 1 ? "" : "s"}`;
+    return;
+  }
+  if (els.details) els.details.style.display = "";
+
   const search = normalize(els.search.value);
   const from = parseDate(els.dateFrom.value);
   const to = parseDate(els.dateTo.value);
 
   let filtered = riskData.filter((risk) => {
+    if (state.typeFilter !== "all" && normalize(risk.type || "threat") !== normalize(state.typeFilter)) return false;
     if (els.project.value && risk.project !== els.project.value) return false;
     if (els.severity.value && canonicalLabel(severityScale, risk.severity) !== els.severity.value) return false;
     if (els.impact.value && risk.impact !== els.impact.value) return false;
@@ -1549,6 +1873,8 @@ function riskZone(score) {
 }
 
 function renderRiskMap(items) {
+  // Risk map shows threats only.
+  const threats = items.filter((r) => normalize(r.type || "threat") !== "opportunity");
   const grid = [];
   const activeSeverity = els.severity.value;
   const activeProbability = els.probability.value;
@@ -1562,7 +1888,7 @@ function renderRiskMap(items) {
   [...severityScale].sort((a, b) => b.value - a.value).forEach((severityItem) => {
     grid.push(`<button class="axis-row-label is-filter${severityItem.label === activeSeverity ? " is-active" : ""}" type="button" data-severity="${severityItem.label}"><span class="axis-name">${severityItem.label}</span><span class="axis-value">${severityItem.value}</span></button>`);
     [...probabilityScale].sort((a, b) => a.value - b.value).forEach((probabilityItem) => {
-      const cellItems = items.filter((risk) =>
+      const cellItems = threats.filter((risk) =>
         severityValue(risk.severity) === severityItem.value && probabilityValue(risk.probability) === probabilityItem.value
       );
       const score = severityItem.value * probabilityItem.value;
@@ -1587,25 +1913,30 @@ function renderRiskMap(items) {
 }
 
 function renderStats(items) {
-  const total = items.length;
-  const open = items.filter((r) => isOpenRisk(r.status)).length;
-  const highPlus = items.filter((r) => ["critical", "very high", "high"].includes(normalize(canonicalLabel(severityScale, r.severity)))).length;
-  const overdue = items.filter((r) => {
+  const threats = items.filter((r) => normalize(r.type || "threat") !== "opportunity");
+  const opps = items.filter((r) => normalize(r.type || "threat") === "opportunity");
+
+  const open = threats.filter((r) => isOpenRisk(r.status)).length;
+  const highPlus = threats.filter((r) => ["critical", "very high", "high"].includes(normalize(canonicalLabel(severityScale, r.severity)))).length;
+  const overdue = threats.filter((r) => {
     const due = parseDate(r.due_date);
     return due && due < new Date() && isOpenRisk(r.status);
   }).length;
-  const avgScore = total ? (items.reduce((acc, r) => acc + scoreRisk(r), 0) / total).toFixed(1) : "0.0";
+  const avgScore = threats.length ? (threats.reduce((acc, r) => acc + scoreRisk(r), 0) / threats.length).toFixed(1) : "0.0";
+  const openOpps = opps.filter((r) => isOpenRisk(r.status)).length;
 
   const cards = [
-    { title: "Total Risks", value: total, tip: "Total number of risks currently visible after filters." },
-    { title: "High + Critical", value: highPlus, tip: "Count of visible risks marked High or Critical severity." },
-    { title: "Open Risks", value: open, tip: "Visible risks not closed, resolved, retired, accepted, or done." },
-    { title: "Overdue Risks", value: overdue, tip: "Visible open risks with due dates before today." },
-    { title: "Average Risk Score", value: avgScore, tip: "Average of Severity x Probability scores for visible risks." },
+    { title: "Threats", value: threats.length, tip: "Total threats currently visible after filters." },
+    { title: "High + Critical", value: highPlus, tip: "Threats marked High or Critical severity." },
+    { title: "Open Threats", value: open, tip: "Threats not closed, resolved, or accepted." },
+    { title: "Overdue Threats", value: overdue, tip: "Open threats with due dates before today." },
+    { title: "Avg Threat Score", value: avgScore, tip: "Average of Severity x Probability for visible threats." },
+    { title: "Opportunities", value: opps.length, tip: "Total opportunities currently visible after filters." },
+    { title: "Open Opportunities", value: openOpps, tip: "Opportunities not yet closed or resolved." },
   ];
 
   els.stats.innerHTML = cards
-    .map((c) => `<article class="stat-card"><h3>${c.title} <span class="tip" tabindex="0" title="${c.tip}" aria-label="${c.title} help">?</span></h3><div class="stat-value">${c.value}</div></article>`)
+    .map((c) => `<article class="stat-card"><h3><span class="stat-label-text">${c.title}</span><span class="tip" tabindex="0" title="${c.tip}" aria-label="${c.title} help">?</span></h3><div class="stat-value">${c.value}</div></article>`)
     .join("");
 }
 
@@ -1647,14 +1978,14 @@ function renderProjectExposure(items) {
 
 function renderTable(items) {
   if (!items.length) {
-    els.table.innerHTML = `<tr><td colspan="10" class="empty">No risks match the selected filters.</td></tr>`;
+    els.table.innerHTML = `<tr><td colspan="16" class="empty">No risks match the selected filters.</td></tr>`;
     return;
   }
 
   els.table.innerHTML = items.map((r) => `
     <tr data-id="${r.risk_id}">
       <td>${r.risk_id || "-"}</td>
-      <td>${r.title || "-"}</td>
+      <td>${r.title || "-"}${normalize(r.type || "threat") === "opportunity" ? " <span class=\"pill-opportunity\">Opportunity</span>" : ""}</td>
       <td>${r.project || "-"}</td>
       <td>${severityPill(r.severity)}</td>
       <td>${canonicalLabel(probabilityScale, r.probability)}</td>
@@ -1663,6 +1994,12 @@ function renderTable(items) {
       <td>${scoreRisk(r) || "-"}</td>
       <td>${r.identified_date || "-"}</td>
       <td>${r.due_date || "-"}</td>
+      <td>${r.impact || "-"}</td>
+      <td>${r.category || "-"}</td>
+      <td>${r.last_review || "-"}</td>
+      <td style="white-space:pre-wrap">${r.mitigation || "-"}</td>
+      <td>${r.trend || "-"}</td>
+      <td style="white-space:pre-wrap;font-size:0.85em;color:var(--muted)">${r.description || "-"}</td>
     </tr>
   `).join("");
 
@@ -1686,12 +2023,13 @@ function highlightActiveRow() {
 
 function renderDetail(risk) {
   state.active = risk.risk_id;
+  const isOpp = normalize(risk.type || "threat") === "opportunity";
   const entries = [
     ["Project", risk.project],
     ["Severity", `${canonicalLabel(severityScale, risk.severity)} (${severityValue(risk.severity)})`],
     ["Impact", risk.impact],
     ["Probability", `${canonicalLabel(probabilityScale, risk.probability)} (${probabilityValue(risk.probability)})`],
-    ["Risk Score", scoreRisk(risk)],
+    ["Score", scoreRisk(risk)],
     ["Status", risk.status],
     ["Owner", risk.owner],
     ["Category", risk.category],
@@ -1703,23 +2041,85 @@ function renderDetail(risk) {
 
   els.details.innerHTML = `
     <div class="detail-header">
-      <h2>${risk.title || "Untitled risk"}</h2>
+      <h2>${risk.title || "Untitled"}${isOpp ? " <span class=\"pill-opportunity\">Opportunity</span>" : ""}</h2>
       <div class="detail-risk-id">${risk.risk_id || "-"}</div>
     </div>
     <div class="detail-grid">${entries.map(([k, v]) => `<div class="detail"><div class="k">${k}</div><div>${v || "-"}</div></div>`).join("")}</div>
     <div class="detail"><div class="k">Description</div><div>${risk.description || "-"}</div></div>
-    <div class="detail"><div class="k">Mitigation Plan</div><div>${risk.mitigation || "-"}</div></div>
+    <div class="detail"><div class="k">${isOpp ? "Response Plan" : "Mitigation Plan"}</div><div>${risk.mitigation || "-"}</div></div>
   `;
   highlightActiveRow();
 }
 
+const RISK_THEAD_HTML = `
+  <th data-sort="risk_id" title="Unique risk identifier. Click to sort.">Risk ID</th>
+  <th data-sort="title" title="Short risk summary. Click to sort.">Title</th>
+  <th data-sort="project" title="Project or initiative impacted. Click to sort.">Project</th>
+  <th data-sort="severity" title="Consequence level if the risk occurs. Click to sort.">Severity</th>
+  <th data-sort="probability" title="Likelihood of occurrence. Click to sort.">Probability</th>
+  <th data-sort="status" title="Current lifecycle state. Click to sort.">Status</th>
+  <th data-sort="owner" title="Person accountable for this risk. Click to sort.">Owner</th>
+  <th data-sort="risk_score" title="Severity x Probability. Click to sort.">Risk Score</th>
+  <th data-sort="identified_date" title="Date when first identified. Click to sort.">Identified Date</th>
+  <th data-sort="due_date" title="Target mitigation date. Click to sort.">Due Date</th>
+`;
+
+function rewireSort() {
+  const thead = els.table ? els.table.closest("table").querySelector("thead tr") : null;
+  if (!thead) return;
+  thead.querySelectorAll("th[data-sort]").forEach((th) => {
+    th.addEventListener("click", () => {
+      const key = th.dataset.sort;
+      if (state.sortKey === key) state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+      else { state.sortKey = key; state.sortDir = "asc"; }
+      applyFilters();
+    });
+  });
+}
+
+function restoreRiskThead() {
+  const thead = els.table ? els.table.closest("table").querySelector("thead tr") : null;
+  if (thead && !thead.querySelector("th[data-sort]")) {
+    thead.innerHTML = RISK_THEAD_HTML;
+    rewireSort();
+  }
+}
+
 function render(items) {
+  restoreRiskThead();
   renderStats(items);
-  renderRiskMap(riskData);
-  renderProjectExposure(items);
-  renderMitigationHealth(items);
+  // Threat map always shows ALL threats so clicking a cell doesn't change its counts.
+  const allThreats = riskData.filter((r) => normalize(r.type || "threat") !== "opportunity");
+  renderRiskMap(allThreats);
+  renderProjectExposure(items.filter((r) => normalize(r.type || "threat") !== "opportunity"));
+  renderMitigationHealth(items.filter((r) => normalize(r.type || "threat") !== "opportunity"));
   renderTable(items);
   els.resultCount.textContent = `${items.length} record${items.length === 1 ? "" : "s"}`;
+}
+
+function renderHighlightsTable(items) {
+  // Swap the thead to show highlight-specific columns.
+  const thead = els.table ? els.table.closest("table").querySelector("thead tr") : null;
+  if (thead) {
+    thead.innerHTML = `
+      <th>Date</th>
+      <th>Title</th>
+      <th>Project</th>
+      <th>Body</th>
+    `;
+  }
+  if (!items.length) {
+    els.table.innerHTML = `<tr><td colspan="4" class="empty">No highlights match the current project filter.</td></tr>`;
+    return;
+  }
+  els.table.innerHTML = items.map((h) => `
+    <tr>
+      <td>${h.date || "-"}</td>
+      <td><strong>${h.title || "-"}</strong></td>
+      <td>${h.project || "-"}</td>
+      <td style="white-space:pre-wrap;font-size:0.82rem;color:var(--muted)">${h.body || "-"}</td>
+    </tr>
+  `).join("");
 }
 
 function renderMitigationHealth(items) {
@@ -1830,22 +2230,184 @@ function csvEscape(value) {
 function downloadCsv() {
   const rows = [...els.table.querySelectorAll("tr[data-id]")].map((row) => row.dataset.id);
   const filtered = riskData.filter((r) => rows.includes(r.risk_id));
-  const headers = [
-    "risk_id", "title", "description", "project", "severity", "impact", "probability", "status", "owner", "category", "identified_date", "due_date", "last_review", "mitigation", "trend"
-  ];
-  const csv = [
-    headers.join(","),
-    ...filtered.map((r) => headers.map((h) => csvEscape(r[h])).join(",")),
-  ].join("\n");
+  triggerCsvDownload(filtered, "filtered_risks.csv");
+}
 
+function buildCsvFieldMap() {
+  return [
+    ["Type", "type"],
+    ["Title", "title"],
+    ["Description", "description"],
+    ["Project", "project"],
+    ["Severity", "severity"],
+    ["Impact", "impact"],
+    ["Probability", "probability"],
+    ["Status", "status"],
+    ["Owner", "owner"],
+    ["Category", "category"],
+    ["Identified Date", "identified_date"],
+    ["Due Date", "due_date"],
+    ["Last Review", "last_review"],
+    ["Mitigation", "mitigation"],
+    ["Trend", "trend"],
+  ];
+}
+
+function triggerCsvDownload(data, filename) {
+  const fieldMap = buildCsvFieldMap();
+  const csv = [
+    fieldMap.map(([h]) => csvEscape(h)).join(","),
+    ...data.map((r) => fieldMap.map(([, f]) => csvEscape(r[f])).join(",")),
+  ].join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = "filtered_risks.csv";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }
+
+
+function crc32(buf) {
+  let t = [];
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) crc = t[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function zipStore(files) {
+  const enc = new TextEncoder();
+  const entries = files.map(function(f) {
+    const name = enc.encode(f.name);
+    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    return { name: name, data: data };
+  });
+  function u32(n) { return [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff]; }
+  function u16(n) { return [n & 0xff, (n >> 8) & 0xff]; }
+  const parts = [], cds = [];
+  let off = 0;
+  for (let ei = 0; ei < entries.length; ei++) {
+    const e = entries[ei];
+    const crc = crc32(e.data);
+    const lh = [0x50,0x4B,0x03,0x04].concat(u16(20),u16(0),u16(0),
+      [0,0,0,0],u32(crc),u32(e.data.length),u32(e.data.length),u16(e.name.length),u16(0));
+    cds.push({ name: e.name, crc: crc, size: e.data.length, off: off });
+    parts.push(Uint8Array.from(lh), e.name, e.data);
+    off += lh.length + e.name.length + e.data.length;
+  }
+  const cdParts = [];
+  let cdSz = 0;
+  const cdOff = off;
+  for (let ci = 0; ci < cds.length; ci++) {
+    const e = cds[ci];
+    const h = [0x50,0x4B,0x01,0x02].concat(u16(20),u16(20),u16(0),u16(0),
+      [0,0,0,0],u32(e.crc),u32(e.size),u32(e.size),
+      u16(e.name.length),u16(0),u16(0),u16(0),u16(0),[0,0,0,0],u32(e.off));
+    cdParts.push(Uint8Array.from(h), e.name);
+    cdSz += h.length + e.name.length;
+  }
+  const eocd = [0x50,0x4B,0x05,0x06,0,0,0,0].concat(u16(cds.length),u16(cds.length),u32(cdSz),u32(cdOff),[0,0]);
+  const all = parts.concat(cdParts, [Uint8Array.from(eocd)]);
+  let sz = 0;
+  for (let pi = 0; pi < all.length; pi++) sz += all[pi].length;
+  const out = new Uint8Array(sz);
+  let pos = 0;
+  for (let pi = 0; pi < all.length; pi++) { out.set(all[pi], pos); pos += all[pi].length; }
+  return out;
+}
+
+function xlEsc(v) {
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function xlCol(n) {
+  let s = '';
+  for (n++; n > 0; n = Math.floor(n / 26)) { n--; s = String.fromCharCode(65 + n % 26) + s; }
+  return s;
+}
+
+function xlSheetXml(rows) {
+  let s = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  for (let ri = 0; ri < rows.length; ri++) {
+    s += '<row r="' + (ri + 1) + '">';
+    for (let ci = 0; ci < rows[ri].length; ci++) {
+      s += '<c r="' + xlCol(ci) + (ri + 1) + '" t="inlineStr"><is><t>' + xlEsc(rows[ri][ci]) + '</t></is></c>';
+    }
+    s += '</row>';
+  }
+  s += '</sheetData></worksheet>';
+  return s;
+}
+
+function downloadAllCsv() {
+  const RF = [
+    ['Type','type'],['Title','title'],['Description','description'],
+    ['Project','project'],['Severity','severity'],['Impact','impact'],
+    ['Probability','probability'],['Status','status'],['Owner','owner'],
+    ['Category','category'],['Identified Date','identified_date'],
+    ['Due Date','due_date'],['Last Review','last_review'],
+    ['Mitigation','mitigation'],['Trend','trend'],
+  ];
+  const HF = [['Date','date'],['Title','title'],['Project','project'],['Body','body']];
+  const riskRows = [RF.map(function(x){return x[0];})].concat(
+    riskData.map(function(r){return RF.map(function(x){return r[x[1]]||'';});}));
+  const hlRows = [HF.map(function(x){return x[0];})].concat(
+    highlightsData.map(function(h){return HF.map(function(x){return h[x[1]]||'';});}));
+
+  const CT = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+    + '<Default Extension="xml" ContentType="application/xml"/>'
+    + '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    + '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+    + '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + '</Types>';
+  const RELS = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+    + '</Relationships>';
+  const WB = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"'
+    + ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+    + '<sheets>'
+    + '<sheet name="Risk Register" sheetId="1" r:id="rId1"/>'
+    + '<sheet name="Highlights" sheetId="2" r:id="rId2"/>'
+    + '</sheets></workbook>';
+  const WBRELS = '<?xml version="1.0" encoding="UTF-8"?>'
+    + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+    + '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>'
+    + '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+    + '</Relationships>';
+
+  const xlsx = zipStore([
+    { name: '[Content_Types].xml', data: CT },
+    { name: '_rels/.rels',         data: RELS },
+    { name: 'xl/workbook.xml',     data: WB },
+    { name: 'xl/_rels/workbook.xml.rels', data: WBRELS },
+    { name: 'xl/styles.xml', data: '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>' },
+    { name: 'xl/worksheets/sheet1.xml', data: xlSheetXml(riskRows) },
+    { name: 'xl/worksheets/sheet2.xml', data: xlSheetXml(hlRows) },
+  ]);
+
+  const blob = new Blob([xlsx], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'risk_register.xlsx';
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+
 
 function wire() {
   const watched = [
@@ -1856,6 +2418,7 @@ function wire() {
   watched.forEach((el) => el.addEventListener("input", applyFilters));
   els.resetFilters.addEventListener("click", resetFilters);
   els.downloadCsv.addEventListener("click", downloadCsv);
+  els.downloadAllCsv.addEventListener("click", downloadAllCsv);
 
   document.querySelectorAll("th[data-sort]").forEach((th) => {
     th.addEventListener("click", () => {
@@ -1865,6 +2428,39 @@ function wire() {
       applyFilters();
     });
   });
+
+  if (els.typeTabs) {
+    els.typeTabs.querySelectorAll(".type-tab").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        els.typeTabs.querySelectorAll(".type-tab").forEach((b) => b.classList.remove("is-active"));
+        btn.classList.add("is-active");
+        state.typeFilter = btn.dataset.type || "all";
+        const isHighlights = state.typeFilter === "Highlights";
+        if (els.colToggleWrap) els.colToggleWrap.style.display = isHighlights ? "none" : "";
+        applyFilters();
+        const tableSection = document.getElementById("section-table");
+        if (tableSection) tableSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    });
+  }
+
+  // Column visibility toggle
+  if (els.colToggleBtn && els.colPanel) {
+    els.colToggleBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      els.colPanel.classList.toggle("is-open");
+    });
+    document.addEventListener("click", (e) => {
+      if (!els.colToggleWrap.contains(e.target)) els.colPanel.classList.remove("is-open");
+    });
+    els.colPanel.querySelectorAll("input[data-col]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const table = els.tableEl;
+        if (table) table.classList.toggle(`hide-col-${cb.dataset.col}`, !cb.checked);
+      });
+      if (!cb.checked && els.tableEl) els.tableEl.classList.add(`hide-col-${cb.dataset.col}`);
+    });
+  }
 }
 
 function initSidebar() {

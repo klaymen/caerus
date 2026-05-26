@@ -3,9 +3,10 @@
 
 from __future__ import annotations
 
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 
 import argparse
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ from openpyxl.utils import get_column_letter
 
 
 SAFE_COLUMNS = {
-    "risk_id": ["risk id", "risk_id", "id"],
+    "type": ["type", "risk type", "entry type"],
     "title": ["title", "risk title", "name"],
     "description": ["description", "risk description", "details"],
     "project": ["project", "program", "initiative"],
@@ -26,20 +27,38 @@ SAFE_COLUMNS = {
     "probability": ["probability", "likelihood"],
     "status": ["status", "state"],
     "owner": ["owner", "risk owner", "responsible"],
-    "category": ["category", "risk category", "type"],
+    "category": ["category", "risk category"],
     "identified_date": ["identified date", "identified_date", "date identified", "created"],
     "due_date": ["due date", "due_date", "target date", "deadline"],
     "last_review": ["last review", "last_review", "review date"],
-    "mitigation": ["mitigation", "mitigation plan", "response plan"],
+    "mitigation": ["mitigation", "mitigation plan", "response plan", "response"],
     "trend": ["trend", "direction"],
 }
 
-REQUIRED_COLUMNS = ["risk_id", "title", "project", "severity", "impact", "identified_date"]
+REQUIRED_COLUMNS = ["title", "project", "severity", "impact", "identified_date"]
 DATE_COLUMNS = ["identified_date", "due_date", "last_review"]
+HIGHLIGHTS_DATE_COLUMNS = ["date"]
 
 
 def normalize(text: str) -> str:
     return " ".join(str(text).strip().lower().replace("_", " ").split())
+
+
+def generate_risk_id(title: str) -> str:
+    """Derive a deterministic 6-character uppercase alphanumeric ID from a title.
+
+    Uses the first 60 bits of a SHA-256 digest converted to base-36, giving
+    ~2.18 billion possible values and a collision probability below 0.003 % for
+    up to 10 000 distinct titles.
+    """
+    digest = hashlib.sha256(str(title).strip().lower().encode()).hexdigest()
+    n = int(digest[:15], 16)  # 60-bit integer from the first 15 hex chars
+    chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    result: list[str] = []
+    for _ in range(6):
+        result.append(chars[n % 36])
+        n //= 36
+    return "".join(reversed(result))
 
 
 def map_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -63,7 +82,12 @@ def map_columns(df: pd.DataFrame) -> pd.DataFrame:
         if column not in mapped.columns:
             mapped[column] = ""
 
-    return mapped[list(SAFE_COLUMNS.keys())]
+    mapped["risk_id"] = mapped["title"].apply(generate_risk_id)
+    # Default type to "Threat" if not provided or blank.
+    mapped["type"] = mapped["type"].apply(
+        lambda v: v.strip() if str(v).strip() else "Threat"
+    )
+    return mapped[["risk_id"] + list(SAFE_COLUMNS.keys())]
 
 
 def serialize_records(df: pd.DataFrame) -> List[dict]:
@@ -82,6 +106,72 @@ def serialize_records(df: pd.DataFrame) -> List[dict]:
                 rec[key] = value.strftime("%Y-%m-%d")
             else:
                 rec[key] = str(value).strip()
+        records.append(rec)
+
+    return records
+
+
+def parse_highlights(excel_path: Path) -> List[dict]:
+    """Read the optional 'Highlights' sheet from the workbook and return records.
+
+    Expected columns: Date, Title, Body (all optional except Title).
+    The sheet may contain an instructions header section above the data table;
+    the function scans for the first row that looks like a header (contains a
+    cell whose normalised value is 'title') and uses that as the column row.
+    Returns an empty list if the sheet does not exist.
+    """
+    try:
+        raw = pd.read_excel(excel_path, sheet_name="Highlights", header=None)
+    except Exception:
+        return []
+
+    # Find the header row: first row where any cell normalises to "title".
+    header_row = None
+    for idx, row in raw.iterrows():
+        if any(normalize(str(v)) == "title" for v in row if pd.notna(v)):
+            header_row = idx
+            break
+
+    if header_row is None:
+        return []
+
+    df = pd.read_excel(excel_path, sheet_name="Highlights", header=header_row)
+
+    col_map: dict[str, str] = {}
+    for col in df.columns:
+        n = normalize(str(col))
+        if n in {"date", "highlight date"}:
+            col_map[col] = "date"
+        elif n in {"title", "highlight title", "heading"}:
+            col_map[col] = "title"
+        elif n in {"project", "program", "initiative"}:
+            col_map[col] = "project"
+        elif n in {"body", "description", "detail", "text", "note", "notes"}:
+            col_map[col] = "body"
+
+    df = df.rename(columns=col_map)
+    for field in ("date", "title", "project", "body"):
+        if field not in df.columns:
+            df[field] = ""
+
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+
+    records: List[dict] = []
+    for row in df[["date", "title", "project", "body"]].to_dict(orient="records"):
+        if not str(row.get("title", "")).strip() or str(row.get("title", "")).strip() == "nan":
+            continue
+        rec: dict = {}
+        for key, value in row.items():
+            if not isinstance(value, str) and pd.isna(value):
+                rec[key] = ""
+            elif key == "date" and value and str(value) != "nan":
+                try:
+                    rec[key] = value.strftime("%Y-%m-%d")
+                except Exception:
+                    rec[key] = str(value).strip()
+            else:
+                rec[key] = str(value).strip() if str(value).strip() != "nan" else ""
         records.append(rec)
 
     return records
@@ -163,6 +253,10 @@ def html_template(embedded_js: str) -> str:
       color: var(--text);
     }
 
+    body.dark .mh-gauge-svg circle:first-child {
+      stroke: var(--border);
+    }
+
     body.dark .mh-gap-bar {
       background: var(--border);
     }
@@ -189,9 +283,17 @@ def html_template(embedded_js: str) -> str:
 
     body.dark .detail-header { border-color: var(--border); }
     body.dark .detail .k { color: var(--muted); }
+    body.dark .detail { background: var(--surface-soft); border-color: var(--border); }
+    body.dark .detail-risk-id { color: var(--muted); }
+    body.dark .mh-section-title { color: var(--muted); }
+    body.dark .exposure-empty {
+      background: var(--surface-soft);
+      border-color: var(--border);
+      color: var(--muted);
+    }
 
     body.dark tr:hover td { background: #1e2c42; }
-    body.dark tr.is-selected td { background: #1e3358; }
+    body.dark tr.is-selected td { background: #192a44; }
 
     body.dark .axis-corner,
     body.dark .axis-label,
@@ -802,16 +904,15 @@ def html_template(embedded_js: str) -> str:
     .axis-row-label.is-filter,
     .risk-cell.is-filter {
       cursor: pointer;
-      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+      transition: box-shadow 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
     }
 
     .axis-corner.is-filter:hover,
     .axis-label.is-filter:hover,
     .axis-row-label.is-filter:hover,
     .risk-cell.is-filter:hover {
-      transform: translateY(-1px);
       border-color: #9eb2d7;
-      box-shadow: 0 4px 12px rgba(59, 89, 152, 0.12);
+      box-shadow: 0 4px 12px rgba(59, 89, 152, 0.18);
     }
 
     .axis-corner.is-active,
@@ -821,13 +922,11 @@ def html_template(embedded_js: str) -> str:
       box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.28), 0 6px 14px rgba(28, 60, 119, 0.2);
       background: #dbe8ff;
       color: #132f61;
-      transform: translateY(-1px);
     }
 
     .risk-cell.is-active {
       border-color: #2e5fb0;
       box-shadow: 0 0 0 3px rgba(46, 95, 176, 0.3), 0 6px 14px rgba(28, 60, 119, 0.24);
-      transform: translateY(-1px);
     }
 
     .axis-name {
@@ -875,6 +974,8 @@ def html_template(embedded_js: str) -> str:
       border-radius: var(--radius-md);
       padding: 12px;
       min-height: 96px;
+      display: flex;
+      flex-direction: column;
     }
 
     .stat-card h3 {
@@ -883,9 +984,15 @@ def html_template(embedded_js: str) -> str:
       text-transform: uppercase;
       letter-spacing: 0.08em;
       color: var(--muted);
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+      display: flex;
+      align-items: flex-start;
+      gap: 5px;
+    }
+
+    .stat-label-text {
+      display: block;
+      min-height: 2.3em;
+      line-height: 1.15;
     }
 
     .stat-value {
@@ -936,30 +1043,23 @@ def html_template(embedded_js: str) -> str:
     }
 
     tbody tr {
-      transition: background 0.17s ease, transform 0.17s ease;
       cursor: pointer;
     }
 
-    tbody tr:hover {
-      background: #f8fafc;
-      transform: translateX(2px);
+    tbody tr:not(.is-selected):hover td {
+      background: rgba(59, 89, 152, 0.05);
     }
 
     tbody tr.is-selected {
-      background: #e4eeff;
+      background: #edf2ff;
     }
 
     tbody tr.is-selected td {
-      box-shadow: inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
+      box-shadow: inset 0 1px 0 #d0ddf7, inset 0 -1px 0 #d0ddf7;
     }
 
     tbody tr.is-selected td:first-child {
-      box-shadow: inset 4px 0 0 #2e5fb0, inset 0 1px 0 #b9cdf0, inset 0 -1px 0 #b9cdf0;
-    }
-
-    tbody tr.is-selected:hover {
-      background: #dce8ff;
-      transform: translateX(2px);
+      box-shadow: inset 3px 0 0 #2e5fb0, inset 0 1px 0 #d0ddf7, inset 0 -1px 0 #d0ddf7;
     }
 
     .pill {
@@ -1145,6 +1245,146 @@ def html_template(embedded_js: str) -> str:
       .sidebar { width: 44px; }
       body { padding-left: 44px; }
     }
+
+    /* ── Type tabs ─────────────────────────────────────────────────────────── */
+    .meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .type-tabs {
+      display: flex;
+      gap: 4px;
+    }
+
+    .type-tab {
+      padding: 5px 14px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.14s, color 0.14s, border-color 0.14s;
+    }
+
+    .type-tab.is-active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .type-tab:hover:not(.is-active) {
+      background: var(--border);
+      color: var(--text);
+    }
+
+    body.dark .type-tab { background: var(--surface-soft); border-color: var(--border); color: var(--muted); }
+    body.dark .type-tab.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Column visibility ─────────────────────────────────────────────────── */
+    .col-toggle-wrap {
+      position: relative;
+    }
+
+    .btn-col-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 5px 12px;
+      border-radius: 7px;
+      border: 1px solid var(--border);
+      background: var(--surface-soft);
+      color: var(--muted);
+      font-size: 0.8rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.14s, color 0.14s;
+    }
+
+    .btn-col-toggle:hover { background: var(--border); color: var(--text); }
+
+    .col-panel {
+      display: none;
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      box-shadow: var(--shadow);
+      padding: 10px 14px;
+      min-width: 180px;
+      z-index: 50;
+      display: grid;
+      gap: 6px;
+    }
+
+    .col-panel.is-open { display: grid; }
+    .col-panel:not(.is-open) { display: none; }
+
+    .col-panel label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+      color: var(--text);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .col-panel label input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+
+    /* Hidden column helpers */
+    .table-wrap table.hide-col-risk_id th:nth-child(1),
+    .table-wrap table.hide-col-risk_id td:nth-child(1) { display: none; }
+    .table-wrap table.hide-col-title th:nth-child(2),
+    .table-wrap table.hide-col-title td:nth-child(2) { display: none; }
+    .table-wrap table.hide-col-project th:nth-child(3),
+    .table-wrap table.hide-col-project td:nth-child(3) { display: none; }
+    .table-wrap table.hide-col-severity th:nth-child(4),
+    .table-wrap table.hide-col-severity td:nth-child(4) { display: none; }
+    .table-wrap table.hide-col-probability th:nth-child(5),
+    .table-wrap table.hide-col-probability td:nth-child(5) { display: none; }
+    .table-wrap table.hide-col-status th:nth-child(6),
+    .table-wrap table.hide-col-status td:nth-child(6) { display: none; }
+    .table-wrap table.hide-col-owner th:nth-child(7),
+    .table-wrap table.hide-col-owner td:nth-child(7) { display: none; }
+    .table-wrap table.hide-col-risk_score th:nth-child(8),
+    .table-wrap table.hide-col-risk_score td:nth-child(8) { display: none; }
+    .table-wrap table.hide-col-identified_date th:nth-child(9),
+    .table-wrap table.hide-col-identified_date td:nth-child(9) { display: none; }
+    .table-wrap table.hide-col-due_date th:nth-child(10),
+    .table-wrap table.hide-col-due_date td:nth-child(10) { display: none; }
+    .table-wrap table.hide-col-impact th:nth-child(11),
+    .table-wrap table.hide-col-impact td:nth-child(11) { display: none; }
+    .table-wrap table.hide-col-category th:nth-child(12),
+    .table-wrap table.hide-col-category td:nth-child(12) { display: none; }
+    .table-wrap table.hide-col-last_review th:nth-child(13),
+    .table-wrap table.hide-col-last_review td:nth-child(13) { display: none; }
+    .table-wrap table.hide-col-mitigation th:nth-child(14),
+    .table-wrap table.hide-col-mitigation td:nth-child(14) { display: none; }
+    .table-wrap table.hide-col-trend th:nth-child(15),
+    .table-wrap table.hide-col-trend td:nth-child(15) { display: none; }
+    .table-wrap table.hide-col-description th:nth-child(16),
+    .table-wrap table.hide-col-description td:nth-child(16) { display: none; }
+
+    /* ── Opportunity pill ──────────────────────────────────────────────────── */
+    .pill-opportunity {
+      display: inline-block;
+      padding: 2px 9px;
+      border-radius: 999px;
+      font-size: 0.73rem;
+      font-weight: 700;
+      background: #d1fae5;
+      color: #065f46;
+    }
+
+    body.dark .pill-opportunity { background: #064e35; color: #6ee7b7; }
   </style>
 </head>
 <body>
@@ -1207,6 +1447,7 @@ def html_template(embedded_js: str) -> str:
       <div class=\"actions\">
         <button class=\"btn btn-primary\" id=\"resetFilters\" type=\"button\">Reset filters</button>
         <button class=\"btn btn-secondary\" id=\"downloadCsv\" type=\"button\">Download filtered CSV</button>
+        <button class=\"btn btn-secondary\" id=\"downloadAllCsv\" type=\"button\">Download all (Excel)</button>
       </div>
     </section>
 
@@ -1215,7 +1456,7 @@ def html_template(embedded_js: str) -> str:
     <section class=\"surface analytics\" id=\"section-analytics\">
       <div class=\"risk-map-panel\">
         <div>
-          <h2 class=\"section-title\">Risk map</h2>
+          <h2 class=\"section-title\">Threat map</h2>
           <div class=\"risk-map-note\">Click a probability column, severity row, or matrix cell to filter the list.</div>
         </div>
         <div class=\"risk-map-grid\" id=\"riskMap\"></div>
@@ -1238,7 +1479,39 @@ def html_template(embedded_js: str) -> str:
 
     <section class=\"surface table-wrap\" id=\"section-table\">
       <div class=\"meta\">
-        <span id=\"resultCount\">0 records</span>
+        <div class=\"type-tabs\" id=\"typeTabs\">
+          <button class=\"type-tab is-active\" data-type=\"all\">All</button>
+          <button class=\"type-tab\" data-type=\"Threat\">Threats</button>
+          <button class=\"type-tab\" data-type=\"Opportunity\">Opportunities</button>
+          <button class=\"type-tab\" data-type=\"Highlights\">Highlights</button>
+        </div>
+        <div style=\"display:flex;align-items:center;gap:10px;\">
+          <span id=\"resultCount\">0 records</span>
+          <div class=\"col-toggle-wrap\" id=\"colToggleWrap\">
+            <button class=\"btn-col-toggle\" id=\"colToggleBtn\" type=\"button\" aria-label=\"Show/hide columns\">
+              <svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><line x1=\"8\" y1=\"6\" x2=\"21\" y2=\"6\"/><line x1=\"8\" y1=\"12\" x2=\"21\" y2=\"12\"/><line x1=\"8\" y1=\"18\" x2=\"21\" y2=\"18\"/><line x1=\"3\" y1=\"6\" x2=\"3.01\" y2=\"6\"/><line x1=\"3\" y1=\"12\" x2=\"3.01\" y2=\"12\"/><line x1=\"3\" y1=\"18\" x2=\"3.01\" y2=\"18\"/></svg>
+              Columns
+            </button>
+            <div class=\"col-panel\" id=\"colPanel\">
+              <label><input type=\"checkbox\" data-col=\"risk_id\"> Risk ID</label>
+              <label><input type=\"checkbox\" data-col=\"title\" checked> Title</label>
+              <label><input type=\"checkbox\" data-col=\"project\" checked> Project</label>
+              <label><input type=\"checkbox\" data-col=\"severity\" checked> Severity</label>
+              <label><input type=\"checkbox\" data-col=\"probability\" checked> Probability</label>
+              <label><input type=\"checkbox\" data-col=\"status\" checked> Status</label>
+              <label><input type=\"checkbox\" data-col=\"owner\"> Owner</label>
+              <label><input type=\"checkbox\" data-col=\"risk_score\" checked> Risk Score</label>
+              <label><input type=\"checkbox\" data-col=\"identified_date\"> Identified Date</label>
+              <label><input type=\"checkbox\" data-col=\"due_date\" checked> Due Date</label>
+              <label><input type=\"checkbox\" data-col=\"impact\"> Impact</label>
+              <label><input type=\"checkbox\" data-col=\"category\"> Category</label>
+              <label><input type=\"checkbox\" data-col=\"last_review\"> Last Review</label>
+              <label><input type=\"checkbox\" data-col=\"mitigation\"> Mitigation</label>
+              <label><input type=\"checkbox\" data-col=\"trend\"> Trend</label>
+              <label><input type=\"checkbox\" data-col=\"description\"> Description</label>
+            </div>
+          </div>
+        </div>
       </div>
       <div class=\"table-scroll\">
         <table>
@@ -1254,6 +1527,12 @@ def html_template(embedded_js: str) -> str:
               <th data-sort=\"risk_score\" title=\"Calculated as Severity value x Probability value. Click to sort.\">Risk Score</th>
               <th data-sort=\"identified_date\" title=\"Date when the risk was first identified. Click to sort.\">Identified Date</th>
               <th data-sort=\"due_date\" title=\"Target mitigation date. Click to sort.\">Due Date</th>
+              <th data-sort=\"impact\" title=\"Consequence if the risk occurs. Click to sort.\">Impact</th>
+              <th data-sort=\"category\" title=\"Risk category. Click to sort.\">Category</th>
+              <th data-sort=\"last_review\" title=\"Date of last review. Click to sort.\">Last Review</th>
+              <th data-sort=\"mitigation\" title=\"Mitigation or response plan. Click to sort.\">Mitigation</th>
+              <th data-sort=\"trend\" title=\"Trend direction. Click to sort.\">Trend</th>
+              <th data-sort=\"description\" title=\"Full description. Click to sort.\">Description</th>
             </tr>
           </thead>
           <tbody id=\"riskTable\"></tbody>
@@ -1264,6 +1543,7 @@ def html_template(embedded_js: str) -> str:
         <div class=\"empty\">Click a row to inspect full details and mitigation plan.</div>
       </aside>
     </section>
+
   </main>
 
   <script>
@@ -1275,8 +1555,9 @@ __EMBEDDED_JS__
     return template.replace("__EMBEDDED_JS__", embedded_js)
 
 
-def js_template(records_json: str) -> str:
+def js_template(records_json: str, highlights_json: str) -> str:
     return f"""const riskData = {records_json};
+const highlightsData = {highlights_json};
 
 const severityScale = [
   {{ label: "Critical", value: 5, aliases: ["critical"] }},
@@ -1298,6 +1579,7 @@ const state = {{
   sortKey: \"severity\",
   sortDir: \"desc\",
   active: null,
+  typeFilter: \"all\",
 }};
 
 const filterIds = [
@@ -1320,6 +1602,7 @@ const els = {{
   overdueOnly: document.getElementById(\"overdueOnly\"),
   resetFilters: document.getElementById(\"resetFilters\"),
   downloadCsv: document.getElementById(\"downloadCsv\"),
+  downloadAllCsv: document.getElementById(\"downloadAllCsv\"),
   stats: document.getElementById(\"stats\"),
   riskMap: document.getElementById(\"riskMap\"),
   projectExposure: document.getElementById(\"projectExposure\"),
@@ -1327,6 +1610,11 @@ const els = {{
   table: document.getElementById(\"riskTable\"),
   details: document.getElementById(\"details\"),
   resultCount: document.getElementById(\"resultCount\"),
+  typeTabs: document.getElementById(\"typeTabs\"),
+  colToggleBtn: document.getElementById(\"colToggleBtn\"),
+  colPanel: document.getElementById(\"colPanel\"),
+  colToggleWrap: document.getElementById(\"colToggleWrap\"),
+  tableEl: document.querySelector(\".table-wrap table\"),
 }};
 
 function normalize(v) {{
@@ -1431,6 +1719,14 @@ function updateActiveFilterStyles() {{
 function applyMapFilter(severityLabel = "", probabilityLabel = "") {{
   els.severity.value = severityLabel;
   els.probability.value = probabilityLabel;
+  // Switch to Threats tab so the table shows only threats matching the clicked cell.
+  if (els.typeTabs) {{
+    els.typeTabs.querySelectorAll(".type-tab").forEach((b) => b.classList.remove("is-active"));
+    const threatTab = els.typeTabs.querySelector('.type-tab[data-type="Threat"]');
+    if (threatTab) threatTab.classList.add("is-active");
+    state.typeFilter = "Threat";
+    if (els.colToggleWrap) els.colToggleWrap.style.display = "";
+  }}
   applyFilters();
 }}
 
@@ -1444,11 +1740,24 @@ function inDateRange(v, from, to) {{
 
 function applyFilters() {{
   updateActiveFilterStyles();
+
+  // Highlights tab: use highlightsData with only the project filter applied.
+  if (state.typeFilter === \"Highlights\") {{
+    if (els.details) {{ els.details.style.display = \"none\"; state.active = null; }}
+    const proj = els.project ? els.project.value : \"\";
+    const filtered = highlightsData.filter((h) => !proj || h.project === proj);
+    renderHighlightsTable(filtered);
+    els.resultCount.textContent = `${{filtered.length}} record${{filtered.length === 1 ? \"\" : \"s\"}}`;
+    return;
+  }}
+  if (els.details) els.details.style.display = \"\";
+
   const search = normalize(els.search.value);
   const from = parseDate(els.dateFrom.value);
   const to = parseDate(els.dateTo.value);
 
   let filtered = riskData.filter((risk) => {{
+    if (state.typeFilter !== \"all\" && normalize(risk.type || \"threat\") !== normalize(state.typeFilter)) return false;
     if (els.project.value && risk.project !== els.project.value) return false;
     if (els.severity.value && canonicalLabel(severityScale, risk.severity) !== els.severity.value) return false;
     if (els.impact.value && risk.impact !== els.impact.value) return false;
@@ -1511,6 +1820,8 @@ function riskZone(score) {{
 }}
 
 function renderRiskMap(items) {{
+  // Risk map shows threats only.
+  const threats = items.filter((r) => normalize(r.type || \"threat\") !== \"opportunity\");
   const grid = [];
   const activeSeverity = els.severity.value;
   const activeProbability = els.probability.value;
@@ -1524,7 +1835,7 @@ function renderRiskMap(items) {{
   [...severityScale].sort((a, b) => b.value - a.value).forEach((severityItem) => {{
     grid.push(`<button class="axis-row-label is-filter${{severityItem.label === activeSeverity ? " is-active" : ""}}" type="button" data-severity="${{severityItem.label}}"><span class="axis-name">${{severityItem.label}}</span><span class="axis-value">${{severityItem.value}}</span></button>`);
     [...probabilityScale].sort((a, b) => a.value - b.value).forEach((probabilityItem) => {{
-      const cellItems = items.filter((risk) =>
+      const cellItems = threats.filter((risk) =>
         severityValue(risk.severity) === severityItem.value && probabilityValue(risk.probability) === probabilityItem.value
       );
       const score = severityItem.value * probabilityItem.value;
@@ -1549,25 +1860,30 @@ function renderRiskMap(items) {{
 }}
 
 function renderStats(items) {{
-  const total = items.length;
-  const open = items.filter((r) => isOpenRisk(r.status)).length;
-  const highPlus = items.filter((r) => [\"critical\", \"very high\", \"high\"].includes(normalize(canonicalLabel(severityScale, r.severity)))).length;
-  const overdue = items.filter((r) => {{
+  const threats = items.filter((r) => normalize(r.type || \"threat\") !== \"opportunity\");
+  const opps = items.filter((r) => normalize(r.type || \"threat\") === \"opportunity\");
+
+  const open = threats.filter((r) => isOpenRisk(r.status)).length;
+  const highPlus = threats.filter((r) => [\"critical\", \"very high\", \"high\"].includes(normalize(canonicalLabel(severityScale, r.severity)))).length;
+  const overdue = threats.filter((r) => {{
     const due = parseDate(r.due_date);
     return due && due < new Date() && isOpenRisk(r.status);
   }}).length;
-  const avgScore = total ? (items.reduce((acc, r) => acc + scoreRisk(r), 0) / total).toFixed(1) : \"0.0\";
+  const avgScore = threats.length ? (threats.reduce((acc, r) => acc + scoreRisk(r), 0) / threats.length).toFixed(1) : \"0.0\";
+  const openOpps = opps.filter((r) => isOpenRisk(r.status)).length;
 
   const cards = [
-    {{ title: \"Total Risks\", value: total, tip: \"Total number of risks currently visible after filters.\" }},
-    {{ title: \"High + Critical\", value: highPlus, tip: \"Count of visible risks marked High or Critical severity.\" }},
-    {{ title: \"Open Risks\", value: open, tip: \"Visible risks not closed, resolved, retired, accepted, or done.\" }},
-    {{ title: \"Overdue Risks\", value: overdue, tip: \"Visible open risks with due dates before today.\" }},
-    {{ title: \"Average Risk Score\", value: avgScore, tip: \"Average of Severity x Probability scores for visible risks.\" }},
+    {{ title: \"Threats\", value: threats.length, tip: \"Total threats currently visible after filters.\" }},
+    {{ title: \"High + Critical\", value: highPlus, tip: \"Threats marked High or Critical severity.\" }},
+    {{ title: \"Open Threats\", value: open, tip: \"Threats not closed, resolved, or accepted.\" }},
+    {{ title: \"Overdue Threats\", value: overdue, tip: \"Open threats with due dates before today.\" }},
+    {{ title: \"Avg Threat Score\", value: avgScore, tip: \"Average of Severity x Probability for visible threats.\" }},
+    {{ title: \"Opportunities\", value: opps.length, tip: \"Total opportunities currently visible after filters.\" }},
+    {{ title: \"Open Opportunities\", value: openOpps, tip: \"Opportunities not yet closed or resolved.\" }},
   ];
 
   els.stats.innerHTML = cards
-    .map((c) => `<article class=\"stat-card\"><h3>${{c.title}} <span class=\"tip\" tabindex=\"0\" title=\"${{c.tip}}\" aria-label=\"${{c.title}} help\">?</span></h3><div class=\"stat-value\">${{c.value}}</div></article>`)
+    .map((c) => `<article class=\"stat-card\"><h3><span class=\"stat-label-text\">${{c.title}}</span><span class=\"tip\" tabindex=\"0\" title=\"${{c.tip}}\" aria-label=\"${{c.title}} help\">?</span></h3><div class=\"stat-value\">${{c.value}}</div></article>`)
     .join(\"\");
 }}
 
@@ -1609,14 +1925,14 @@ function renderProjectExposure(items) {{
 
 function renderTable(items) {{
   if (!items.length) {{
-    els.table.innerHTML = `<tr><td colspan=\"10\" class=\"empty\">No risks match the selected filters.</td></tr>`;
+    els.table.innerHTML = `<tr><td colspan=\"16\" class=\"empty\">No risks match the selected filters.</td></tr>`;
     return;
   }}
 
   els.table.innerHTML = items.map((r) => `
     <tr data-id=\"${{r.risk_id}}\">
       <td>${{r.risk_id || \"-\"}}</td>
-      <td>${{r.title || \"-\"}}</td>
+      <td>${{r.title || \"-\"}}${{normalize(r.type || \"threat\") === \"opportunity\" ? \" <span class=\\\"pill-opportunity\\\">Opportunity</span>\" : \"\"}}</td>
       <td>${{r.project || \"-\"}}</td>
       <td>${{severityPill(r.severity)}}</td>
       <td>${{canonicalLabel(probabilityScale, r.probability)}}</td>
@@ -1625,6 +1941,12 @@ function renderTable(items) {{
       <td>${{scoreRisk(r) || \"-\"}}</td>
       <td>${{r.identified_date || \"-\"}}</td>
       <td>${{r.due_date || \"-\"}}</td>
+      <td>${{r.impact || \"-\"}}</td>
+      <td>${{r.category || \"-\"}}</td>
+      <td>${{r.last_review || \"-\"}}</td>
+      <td style=\"white-space:pre-wrap\">${{r.mitigation || \"-\"}}</td>
+      <td>${{r.trend || \"-\"}}</td>
+      <td style=\"white-space:pre-wrap;font-size:0.85em;color:var(--muted)\">${{r.description || \"-\"}}</td>
     </tr>
   `).join(\"\");
 
@@ -1648,12 +1970,13 @@ function highlightActiveRow() {{
 
 function renderDetail(risk) {{
   state.active = risk.risk_id;
+  const isOpp = normalize(risk.type || \"threat\") === \"opportunity\";
   const entries = [
     [\"Project\", risk.project],
     [\"Severity\", `${{canonicalLabel(severityScale, risk.severity)}} (${{severityValue(risk.severity)}})`],
     [\"Impact\", risk.impact],
     [\"Probability\", `${{canonicalLabel(probabilityScale, risk.probability)}} (${{probabilityValue(risk.probability)}})`],
-    [\"Risk Score\", scoreRisk(risk)],
+    [\"Score\", scoreRisk(risk)],
     [\"Status\", risk.status],
     [\"Owner\", risk.owner],
     [\"Category\", risk.category],
@@ -1665,23 +1988,85 @@ function renderDetail(risk) {{
 
   els.details.innerHTML = `
     <div class=\"detail-header\">
-      <h2>${{risk.title || \"Untitled risk\"}}</h2>
+      <h2>${{risk.title || \"Untitled\"}}${{isOpp ? \" <span class=\\\"pill-opportunity\\\">Opportunity</span>\" : \"\"}}</h2>
       <div class=\"detail-risk-id\">${{risk.risk_id || \"-\"}}</div>
     </div>
     <div class=\"detail-grid\">${{entries.map(([k, v]) => `<div class=\"detail\"><div class=\"k\">${{k}}</div><div>${{v || \"-\"}}</div></div>`).join(\"\")}}</div>
     <div class=\"detail\"><div class=\"k\">Description</div><div>${{risk.description || \"-\"}}</div></div>
-    <div class=\"detail\"><div class=\"k\">Mitigation Plan</div><div>${{risk.mitigation || \"-\"}}</div></div>
+    <div class=\"detail\"><div class=\"k\">${{isOpp ? \"Response Plan\" : \"Mitigation Plan\"}}</div><div>${{risk.mitigation || \"-\"}}</div></div>
   `;
   highlightActiveRow();
 }}
 
+const RISK_THEAD_HTML = `
+  <th data-sort="risk_id" title="Unique risk identifier. Click to sort.">Risk ID</th>
+  <th data-sort="title" title="Short risk summary. Click to sort.">Title</th>
+  <th data-sort="project" title="Project or initiative impacted. Click to sort.">Project</th>
+  <th data-sort="severity" title="Consequence level if the risk occurs. Click to sort.">Severity</th>
+  <th data-sort="probability" title="Likelihood of occurrence. Click to sort.">Probability</th>
+  <th data-sort="status" title="Current lifecycle state. Click to sort.">Status</th>
+  <th data-sort="owner" title="Person accountable for this risk. Click to sort.">Owner</th>
+  <th data-sort="risk_score" title="Severity x Probability. Click to sort.">Risk Score</th>
+  <th data-sort="identified_date" title="Date when first identified. Click to sort.">Identified Date</th>
+  <th data-sort="due_date" title="Target mitigation date. Click to sort.">Due Date</th>
+`;
+
+function rewireSort() {{
+  const thead = els.table ? els.table.closest(\"table\").querySelector(\"thead tr\") : null;
+  if (!thead) return;
+  thead.querySelectorAll(\"th[data-sort]\").forEach((th) => {{
+    th.addEventListener(\"click\", () => {{
+      const key = th.dataset.sort;
+      if (state.sortKey === key) state.sortDir = state.sortDir === \"asc\" ? \"desc\" : \"asc\";
+      else {{ state.sortKey = key; state.sortDir = \"asc\"; }}
+      applyFilters();
+    }});
+  }});
+}}
+
+function restoreRiskThead() {{
+  const thead = els.table ? els.table.closest(\"table\").querySelector(\"thead tr\") : null;
+  if (thead && !thead.querySelector(\"th[data-sort]\")) {{
+    thead.innerHTML = RISK_THEAD_HTML;
+    rewireSort();
+  }}
+}}
+
 function render(items) {{
+  restoreRiskThead();
   renderStats(items);
-  renderRiskMap(riskData);
-  renderProjectExposure(items);
-  renderMitigationHealth(items);
+  // Threat map always shows ALL threats so clicking a cell doesn't change its counts.
+  const allThreats = riskData.filter((r) => normalize(r.type || \"threat\") !== \"opportunity\");
+  renderRiskMap(allThreats);
+  renderProjectExposure(items.filter((r) => normalize(r.type || \"threat\") !== \"opportunity\"));
+  renderMitigationHealth(items.filter((r) => normalize(r.type || \"threat\") !== \"opportunity\"));
   renderTable(items);
   els.resultCount.textContent = `${{items.length}} record${{items.length === 1 ? \"\" : \"s\"}}`;
+}}
+
+function renderHighlightsTable(items) {{
+  // Swap the thead to show highlight-specific columns.
+  const thead = els.table ? els.table.closest(\"table\").querySelector(\"thead tr\") : null;
+  if (thead) {{
+    thead.innerHTML = `
+      <th>Date</th>
+      <th>Title</th>
+      <th>Project</th>
+      <th>Body</th>
+    `;
+  }}
+  if (!items.length) {{
+    els.table.innerHTML = `<tr><td colspan=\"4\" class=\"empty\">No highlights match the current project filter.</td></tr>`;
+    return;
+  }}
+  els.table.innerHTML = items.map((h) => `
+    <tr>
+      <td>${{h.date || \"-\"}}</td>
+      <td><strong>${{h.title || \"-\"}}</strong></td>
+      <td>${{h.project || \"-\"}}</td>
+      <td style=\"white-space:pre-wrap;font-size:0.82rem;color:var(--muted)\">${{h.body || \"-\"}}</td>
+    </tr>
+  `).join(\"\");
 }}
 
 function renderMitigationHealth(items) {{
@@ -1792,22 +2177,184 @@ function csvEscape(value) {{
 function downloadCsv() {{
   const rows = [...els.table.querySelectorAll(\"tr[data-id]\")].map((row) => row.dataset.id);
   const filtered = riskData.filter((r) => rows.includes(r.risk_id));
-  const headers = [
-    \"risk_id\", \"title\", \"description\", \"project\", \"severity\", \"impact\", \"probability\", \"status\", \"owner\", \"category\", \"identified_date\", \"due_date\", \"last_review\", \"mitigation\", \"trend\"
-  ];
-  const csv = [
-    headers.join(\",\"),
-    ...filtered.map((r) => headers.map((h) => csvEscape(r[h])).join(\",\")),
-  ].join(\"\\n\");
+  triggerCsvDownload(filtered, \"filtered_risks.csv\");
+}}
 
+function buildCsvFieldMap() {{
+  return [
+    [\"Type\", \"type\"],
+    [\"Title\", \"title\"],
+    [\"Description\", \"description\"],
+    [\"Project\", \"project\"],
+    [\"Severity\", \"severity\"],
+    [\"Impact\", \"impact\"],
+    [\"Probability\", \"probability\"],
+    [\"Status\", \"status\"],
+    [\"Owner\", \"owner\"],
+    [\"Category\", \"category\"],
+    [\"Identified Date\", \"identified_date\"],
+    [\"Due Date\", \"due_date\"],
+    [\"Last Review\", \"last_review\"],
+    [\"Mitigation\", \"mitigation\"],
+    [\"Trend\", \"trend\"],
+  ];
+}}
+
+function triggerCsvDownload(data, filename) {{
+  const fieldMap = buildCsvFieldMap();
+  const csv = [
+    fieldMap.map(([h]) => csvEscape(h)).join(\",\"),
+    ...data.map((r) => fieldMap.map(([, f]) => csvEscape(r[f])).join(\",\")),
+  ].join(\"\\n\");
   const blob = new Blob([csv], {{ type: \"text/csv;charset=utf-8;\" }});
   const url = URL.createObjectURL(blob);
   const link = document.createElement(\"a\");
   link.href = url;
-  link.download = \"filtered_risks.csv\";
+  link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
 }}
+
+
+function crc32(buf) {{
+  let t = [];
+  for (let i = 0; i < 256; i++) {{
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }}
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) crc = t[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}}
+
+function zipStore(files) {{
+  const enc = new TextEncoder();
+  const entries = files.map(function(f) {{
+    const name = enc.encode(f.name);
+    const data = typeof f.data === 'string' ? enc.encode(f.data) : f.data;
+    return {{ name: name, data: data }};
+  }});
+  function u32(n) {{ return [n & 0xff, (n >> 8) & 0xff, (n >> 16) & 0xff, (n >> 24) & 0xff]; }}
+  function u16(n) {{ return [n & 0xff, (n >> 8) & 0xff]; }}
+  const parts = [], cds = [];
+  let off = 0;
+  for (let ei = 0; ei < entries.length; ei++) {{
+    const e = entries[ei];
+    const crc = crc32(e.data);
+    const lh = [0x50,0x4B,0x03,0x04].concat(u16(20),u16(0),u16(0),
+      [0,0,0,0],u32(crc),u32(e.data.length),u32(e.data.length),u16(e.name.length),u16(0));
+    cds.push({{ name: e.name, crc: crc, size: e.data.length, off: off }});
+    parts.push(Uint8Array.from(lh), e.name, e.data);
+    off += lh.length + e.name.length + e.data.length;
+  }}
+  const cdParts = [];
+  let cdSz = 0;
+  const cdOff = off;
+  for (let ci = 0; ci < cds.length; ci++) {{
+    const e = cds[ci];
+    const h = [0x50,0x4B,0x01,0x02].concat(u16(20),u16(20),u16(0),u16(0),
+      [0,0,0,0],u32(e.crc),u32(e.size),u32(e.size),
+      u16(e.name.length),u16(0),u16(0),u16(0),u16(0),[0,0,0,0],u32(e.off));
+    cdParts.push(Uint8Array.from(h), e.name);
+    cdSz += h.length + e.name.length;
+  }}
+  const eocd = [0x50,0x4B,0x05,0x06,0,0,0,0].concat(u16(cds.length),u16(cds.length),u32(cdSz),u32(cdOff),[0,0]);
+  const all = parts.concat(cdParts, [Uint8Array.from(eocd)]);
+  let sz = 0;
+  for (let pi = 0; pi < all.length; pi++) sz += all[pi].length;
+  const out = new Uint8Array(sz);
+  let pos = 0;
+  for (let pi = 0; pi < all.length; pi++) {{ out.set(all[pi], pos); pos += all[pi].length; }}
+  return out;
+}}
+
+function xlEsc(v) {{
+  return String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}}
+
+function xlCol(n) {{
+  let s = '';
+  for (n++; n > 0; n = Math.floor(n / 26)) {{ n--; s = String.fromCharCode(65 + n % 26) + s; }}
+  return s;
+}}
+
+function xlSheetXml(rows) {{
+  let s = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+    + '<worksheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"><sheetData>';
+  for (let ri = 0; ri < rows.length; ri++) {{
+    s += '<row r=\"' + (ri + 1) + '\">';
+    for (let ci = 0; ci < rows[ri].length; ci++) {{
+      s += '<c r=\"' + xlCol(ci) + (ri + 1) + '\" t=\"inlineStr\"><is><t>' + xlEsc(rows[ri][ci]) + '</t></is></c>';
+    }}
+    s += '</row>';
+  }}
+  s += '</sheetData></worksheet>';
+  return s;
+}}
+
+function downloadAllCsv() {{
+  const RF = [
+    ['Type','type'],['Title','title'],['Description','description'],
+    ['Project','project'],['Severity','severity'],['Impact','impact'],
+    ['Probability','probability'],['Status','status'],['Owner','owner'],
+    ['Category','category'],['Identified Date','identified_date'],
+    ['Due Date','due_date'],['Last Review','last_review'],
+    ['Mitigation','mitigation'],['Trend','trend'],
+  ];
+  const HF = [['Date','date'],['Title','title'],['Project','project'],['Body','body']];
+  const riskRows = [RF.map(function(x){{return x[0];}})].concat(
+    riskData.map(function(r){{return RF.map(function(x){{return r[x[1]]||'';}});}}));
+  const hlRows = [HF.map(function(x){{return x[0];}})].concat(
+    highlightsData.map(function(h){{return HF.map(function(x){{return h[x[1]]||'';}});}}));
+
+  const CT = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+    + '<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">'
+    + '<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>'
+    + '<Default Extension=\"xml\" ContentType=\"application/xml\"/>'
+    + '<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>'
+    + '<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>'
+    + '<Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>'
+    + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+    + '</Types>';
+  const RELS = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+    + '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">'
+    + '<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>'
+    + '</Relationships>';
+  const WB = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+    + '<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\"'
+    + ' xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">'
+    + '<sheets>'
+    + '<sheet name=\"Risk Register\" sheetId=\"1\" r:id=\"rId1\"/>'
+    + '<sheet name=\"Highlights\" sheetId=\"2\" r:id=\"rId2\"/>'
+    + '</sheets></workbook>';
+  const WBRELS = '<?xml version=\"1.0\" encoding=\"UTF-8\"?>'
+    + '<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">'
+    + '<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>'
+    + '<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet2.xml\"/>'
+    + '<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>'
+    + '</Relationships>';
+
+  const xlsx = zipStore([
+    {{ name: '[Content_Types].xml', data: CT }},
+    {{ name: '_rels/.rels',         data: RELS }},
+    {{ name: 'xl/workbook.xml',     data: WB }},
+    {{ name: 'xl/_rels/workbook.xml.rels', data: WBRELS }},
+    {{ name: 'xl/styles.xml', data: '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills><borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs></styleSheet>' }},
+    {{ name: 'xl/worksheets/sheet1.xml', data: xlSheetXml(riskRows) }},
+    {{ name: 'xl/worksheets/sheet2.xml', data: xlSheetXml(hlRows) }},
+  ]);
+
+  const blob = new Blob([xlsx], {{ type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }});
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'risk_register.xlsx';
+  link.click();
+  URL.revokeObjectURL(url);
+}}
+
+
 
 function wire() {{
   const watched = [
@@ -1818,6 +2365,7 @@ function wire() {{
   watched.forEach((el) => el.addEventListener(\"input\", applyFilters));
   els.resetFilters.addEventListener(\"click\", resetFilters);
   els.downloadCsv.addEventListener(\"click\", downloadCsv);
+  els.downloadAllCsv.addEventListener(\"click\", downloadAllCsv);
 
   document.querySelectorAll(\"th[data-sort]\").forEach((th) => {{
     th.addEventListener(\"click\", () => {{
@@ -1827,6 +2375,39 @@ function wire() {{
       applyFilters();
     }});
   }});
+
+  if (els.typeTabs) {{
+    els.typeTabs.querySelectorAll(\".type-tab\").forEach((btn) => {{
+      btn.addEventListener(\"click\", () => {{
+        els.typeTabs.querySelectorAll(\".type-tab\").forEach((b) => b.classList.remove(\"is-active\"));
+        btn.classList.add(\"is-active\");
+        state.typeFilter = btn.dataset.type || \"all\";
+        const isHighlights = state.typeFilter === \"Highlights\";
+        if (els.colToggleWrap) els.colToggleWrap.style.display = isHighlights ? \"none\" : \"\";
+        applyFilters();
+        const tableSection = document.getElementById(\"section-table\");
+        if (tableSection) tableSection.scrollIntoView({{ behavior: \"smooth\", block: \"start\" }});
+      }});
+    }});
+  }}
+
+  // Column visibility toggle
+  if (els.colToggleBtn && els.colPanel) {{
+    els.colToggleBtn.addEventListener(\"click\", (e) => {{
+      e.stopPropagation();
+      els.colPanel.classList.toggle(\"is-open\");
+    }});
+    document.addEventListener(\"click\", (e) => {{
+      if (!els.colToggleWrap.contains(e.target)) els.colPanel.classList.remove(\"is-open\");
+    }});
+    els.colPanel.querySelectorAll(\"input[data-col]\").forEach((cb) => {{
+      cb.addEventListener(\"change\", () => {{
+        const table = els.tableEl;
+        if (table) table.classList.toggle(`hide-col-${{cb.dataset.col}}`, !cb.checked);
+      }});
+      if (!cb.checked && els.tableEl) els.tableEl.classList.add(`hide-col-${{cb.dataset.col}}`);
+    }});
+  }}
 }}
 
 function initSidebar() {{
@@ -1893,8 +2474,9 @@ init();
 
 def create_sample_excel(path: Path) -> None:
     sample_rows = [
+        # ── Threats ──────────────────────────────────────────────────────────
         {
-            "Risk ID": "RISK-001",
+            "Type": "Threat",
             "Title": "API rate-limit breach during peak traffic",
             "Description": "Expected product launch surge may overwhelm third-party payment APIs.",
             "Project": "Phoenix",
@@ -1902,16 +2484,16 @@ def create_sample_excel(path: Path) -> None:
             "Impact": "Financial",
             "Probability": "High",
             "Status": "Open",
-          "Owner": "A. Nemeth",
+            "Owner": "A. Nemeth",
             "Category": "Technology",
             "Identified Date": "2026-03-19",
             "Due Date": "2026-05-20",
             "Last Review": "2026-05-03",
-            "Mitigation": "Enable queue buffering, pre-warm workers, and add fallback payment provider.",
+            "Response": "",
             "Trend": "Worsening",
         },
         {
-            "Risk ID": "RISK-002",
+            "Type": "Threat",
             "Title": "Unclear legal language in vendor addendum",
             "Description": "Contract clause may expose liability on SLA penalties.",
             "Project": "Atlas",
@@ -1924,28 +2506,28 @@ def create_sample_excel(path: Path) -> None:
             "Identified Date": "2026-02-10",
             "Due Date": "2026-04-30",
             "Last Review": "2026-04-29",
-            "Mitigation": "Legal review and negotiated cap on penalties before signing.",
+            "Response": "Legal review and negotiated cap on penalties before signing.",
             "Trend": "Stable",
         },
         {
-            "Risk ID": "RISK-003",
+            "Type": "Threat",
             "Title": "Single-point failure in reporting ETL",
             "Description": "Nightly pipeline has no parallel failover and delayed alerting.",
             "Project": "Phoenix",
-          "Severity": "Very High",
+            "Severity": "Very High",
             "Impact": "Operational",
             "Probability": "High",
             "Status": "Open",
-          "Owner": "D. Kovacs",
+            "Owner": "D. Kovacs",
             "Category": "Operations",
             "Identified Date": "2026-01-06",
             "Due Date": "2026-06-10",
             "Last Review": "2026-05-06",
-            "Mitigation": "Implement active-passive jobs and on-call escalation webhook.",
+            "Response": "",
             "Trend": "Improving",
         },
         {
-            "Risk ID": "RISK-004",
+            "Type": "Threat",
             "Title": "Low sprint velocity due to key vacancy",
             "Description": "One missing frontend engineer affects release commitments.",
             "Project": "Nimbus",
@@ -1958,11 +2540,11 @@ def create_sample_excel(path: Path) -> None:
             "Identified Date": "2026-04-01",
             "Due Date": "2026-06-30",
             "Last Review": "2026-05-08",
-            "Mitigation": "Temporary contractor onboarding and scope reduction for non-critical features.",
+            "Response": "",
             "Trend": "Stable",
         },
         {
-            "Risk ID": "RISK-005",
+            "Type": "Threat",
             "Title": "Dependency CVE in auth package",
             "Description": "Newly published vulnerability affects currently deployed version.",
             "Project": "Atlas",
@@ -1970,16 +2552,16 @@ def create_sample_excel(path: Path) -> None:
             "Impact": "Security",
             "Probability": "Medium",
             "Status": "Open",
-          "Owner": "R. Molnar",
+            "Owner": "R. Molnar",
             "Category": "Security",
             "Identified Date": "2026-05-02",
             "Due Date": "2026-05-16",
             "Last Review": "2026-05-12",
-            "Mitigation": "Patch dependency, rotate secrets, and perform targeted penetration test.",
+            "Response": "Patch dependency, rotate secrets, and perform targeted penetration test.",
             "Trend": "Worsening",
         },
         {
-            "Risk ID": "RISK-006",
+            "Type": "Threat",
             "Title": "Legacy data migration quality issues",
             "Description": "Null and malformed legacy records fail strict schema checks.",
             "Project": "Orion",
@@ -1987,16 +2569,16 @@ def create_sample_excel(path: Path) -> None:
             "Impact": "Data Quality",
             "Probability": "High",
             "Status": "Mitigated",
-          "Owner": "V. Toth",
+            "Owner": "V. Toth",
             "Category": "Data",
             "Identified Date": "2025-12-14",
             "Due Date": "2026-03-15",
             "Last Review": "2026-04-20",
-            "Mitigation": "Pre-migration cleansing scripts and validation checkpoint in CI.",
+            "Response": "Pre-migration cleansing scripts and validation checkpoint in CI.",
             "Trend": "Improving",
         },
         {
-            "Risk ID": "RISK-007",
+            "Type": "Threat",
             "Title": "Cloud cost overrun from idle clusters",
             "Description": "Night and weekend autoscaling floor is too high across regions.",
             "Project": "Nimbus",
@@ -2009,11 +2591,11 @@ def create_sample_excel(path: Path) -> None:
             "Identified Date": "2026-03-02",
             "Due Date": "2026-07-01",
             "Last Review": "2026-05-04",
-            "Mitigation": "Introduce schedule-based scaling and budget alerts.",
+            "Response": "Introduce schedule-based scaling and budget alerts.",
             "Trend": "Stable",
         },
         {
-            "Risk ID": "RISK-008",
+            "Type": "Threat",
             "Title": "Delayed stakeholder approvals",
             "Description": "Sign-offs from external partners often miss the planned windows.",
             "Project": "Orion",
@@ -2026,7 +2608,76 @@ def create_sample_excel(path: Path) -> None:
             "Identified Date": "2025-11-20",
             "Due Date": "2026-01-31",
             "Last Review": "2026-02-01",
-            "Mitigation": "Introduced approval SLA dashboard and escalation path.",
+            "Response": "Introduced approval SLA dashboard and escalation path.",
+            "Trend": "Improving",
+        },
+        # ── Opportunities ─────────────────────────────────────────────────────
+        {
+            "Type": "Opportunity",
+            "Title": "Early access to cloud volume discount tier",
+            "Description": "Projected spend trajectory qualifies for a reserved-instance discount negotiation window opening in Q3.",
+            "Project": "Nimbus",
+            "Severity": "High",
+            "Impact": "Financial",
+            "Probability": "High",
+            "Status": "Open",
+            "Owner": "B. Lakatos",
+            "Category": "FinOps",
+            "Identified Date": "2026-04-10",
+            "Due Date": "2026-07-15",
+            "Last Review": "2026-05-10",
+            "Response": "Engage cloud account manager, model commitment tiers, and present business case to finance.",
+            "Trend": "Improving",
+        },
+        {
+            "Type": "Opportunity",
+            "Title": "Strategic logistics partnership for Phoenix",
+            "Description": "A tier-1 logistics provider has expressed intent to co-market and integrate with the Phoenix platform.",
+            "Project": "Phoenix",
+            "Severity": "Very High",
+            "Impact": "Revenue",
+            "Probability": "Medium",
+            "Status": "In Progress",
+            "Owner": "A. Nemeth",
+            "Category": "Partnerships",
+            "Identified Date": "2026-03-25",
+            "Due Date": "2026-08-01",
+            "Last Review": "2026-05-15",
+            "Response": "Assign partnership lead, draft MOU, and align product roadmap to integration requirements.",
+            "Trend": "Improving",
+        },
+        {
+            "Type": "Opportunity",
+            "Title": "Regulatory simplification in key compliance area",
+            "Description": "Proposed amendment to data-residency rules could reduce Atlas compliance overhead significantly.",
+            "Project": "Atlas",
+            "Severity": "Medium",
+            "Impact": "Compliance",
+            "Probability": "Low",
+            "Status": "Open",
+            "Owner": "M. Farkas",
+            "Category": "Legal",
+            "Identified Date": "2026-02-28",
+            "Due Date": "2026-09-30",
+            "Last Review": "2026-04-18",
+            "Response": "Monitor regulatory updates, engage legal counsel, and prepare architecture adaptation plan.",
+            "Trend": "Stable",
+        },
+        {
+            "Type": "Opportunity",
+            "Title": "Open-source ETL library cuts pipeline build time",
+            "Description": "A recently released open-source framework covers 70% of Orion ETL patterns and is already battle-tested.",
+            "Project": "Orion",
+            "Severity": "High",
+            "Impact": "Schedule",
+            "Probability": "High",
+            "Status": "Open",
+            "Owner": "D. Kovacs",
+            "Category": "Technology",
+            "Identified Date": "2026-05-05",
+            "Due Date": "2026-06-20",
+            "Last Review": "2026-05-20",
+            "Response": "Proof-of-concept sprint, security review of library, and incremental adoption plan.",
             "Trend": "Improving",
         },
     ]
@@ -2073,7 +2724,7 @@ def create_sample_excel(path: Path) -> None:
 
       quick_start_lines = [
         "1) Enter one risk per row in the Risk Register sheet.",
-        "2) Keep Risk ID unique (example: RISK-009).",
+        "2) A unique Risk ID is generated automatically from the Title — keep titles descriptive.",
         "3) Use consistent values for Severity, Probability, Status, and Trend.",
         "4) Date fields must use YYYY-MM-DD format.",
         "5) Fill Mitigation with concrete actions and next steps.",
@@ -2096,20 +2747,20 @@ def create_sample_excel(path: Path) -> None:
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
       field_rows = [
-        ("Risk ID", "Yes", "Unique identifier", "RISK-001, RISK-002"),
-        ("Title", "Yes", "Short risk summary", "API outage during launch"),
-        ("Description", "No", "Risk details and context", "What may happen and why"),
+        ("Type", "No", "Threat or Opportunity", "Threat (default), Opportunity"),
+        ("Title", "Yes", "Short summary (ID auto-generated)", "API outage during launch"),
+        ("Description", "No", "Details and context", "What may happen and why"),
         ("Project", "Yes", "Project or initiative name", "Phoenix, Atlas, Orion, Nimbus"),
-            ("Severity", "Yes", "Consequence if risk occurs", "Critical, Very High, High, Medium, Low"),
-        ("Impact", "Yes", "Primary impact area", "Financial, Security, Compliance, Schedule, Operational"),
+        ("Severity", "Yes", "Consequence / benefit magnitude", "Critical, Very High, High, Medium, Low"),
+        ("Impact", "Yes", "Primary area affected or benefited", "Financial, Security, Compliance, Schedule, Revenue"),
         ("Probability", "No", "Likelihood of occurrence", "VeryHigh, High, Medium, Low, VeryLow"),
         ("Status", "No", "Current state", "Open, In Progress, Mitigated, Closed, Resolved"),
         ("Owner", "No", "Accountable person", "Initial + surname, or full name"),
-        ("Category", "No", "Risk domain", "Technology, Security, Legal, Data, People, Operations"),
-        ("Identified Date", "Yes", "Date risk was identified", "YYYY-MM-DD"),
-        ("Due Date", "No", "Target mitigation date", "YYYY-MM-DD"),
+        ("Category", "No", "Domain", "Technology, Security, Legal, Data, People, Operations"),
+        ("Identified Date", "Yes", "Date first identified", "YYYY-MM-DD"),
+        ("Due Date", "No", "Target response date", "YYYY-MM-DD"),
         ("Last Review", "No", "Last review/checkpoint date", "YYYY-MM-DD"),
-        ("Mitigation", "No", "Planned response actions", "Action-oriented and specific"),
+        ("Response", "No", "Planned response actions", "Action-oriented and specific"),
         ("Trend", "No", "Direction over time", "Worsening, Stable, Improving"),
       ]
 
@@ -2124,11 +2775,61 @@ def create_sample_excel(path: Path) -> None:
       help_sheet.column_dimensions["C"].width = 34
       help_sheet.column_dimensions["D"].width = 46
 
+      # ── Highlights sheet ─────────────────────────────────────────────────
+      hl_sheet = workbook.create_sheet("Highlights")
+      hl_sheet["A1"] = "Caerus Highlights"
+      hl_sheet["A1"].font = Font(color="FFFFFF", bold=True, size=13)
+      hl_sheet["A1"].fill = title_fill
+      hl_sheet.merge_cells("A1:C1")
+      hl_sheet["A1"].alignment = Alignment(horizontal="left", vertical="center")
+      hl_sheet.row_dimensions[1].height = 24
+
+      hl_sheet["A3"] = "Quick Start"
+      hl_sheet["A3"].font = Font(bold=True)
+      hl_sheet["A3"].fill = section_fill
+      hl_sheet.merge_cells("A3:C3")
+      for offset, line in enumerate([
+        "1) Add one highlight per row.",
+        "2) Date format: YYYY-MM-DD (optional but recommended).",
+        "3) Title is the only required field.",
+        "4) Project links the highlight to a specific project for filtering.",
+        "5) Body can contain multi-line narrative text.",
+      ], start=4):
+        hl_sheet[f"A{offset}"] = line
+        hl_sheet.merge_cells(f"A{offset}:C{offset}")
+
+      hl_headers = ["Date", "Title", "Project", "Body"]
+      for col_idx, hdr in enumerate(hl_headers, start=1):
+        cell = hl_sheet.cell(row=9, column=col_idx, value=hdr)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+
+      highlight_samples = [
+        ("2026-05-20", "Q2 Security Audit Passed", "Atlas", "Atlas completed its quarterly security audit with zero critical findings. All medium-severity items have remediation plans in place."),
+        ("2026-05-12", "Auth CVE Patched Ahead of Schedule", "Atlas", "The auth package CVE was patched and deployed 4 days ahead of the due date. Secrets rotation completed with no service disruption."),
+        ("2026-04-28", "Phoenix MVP Delivered On Time", "Phoenix", "The Phoenix minimum viable product was released to pilot customers on schedule. Initial feedback is positive with a 4.2/5 satisfaction score."),
+        ("2026-04-05", "Orion ETL Reliability Up 18%", "Orion", "Following the active-passive failover implementation, the Orion reporting pipeline availability improved from 97.1% to 99.2% month-over-month."),
+      ]
+      for row_idx, (date, title, project, body) in enumerate(highlight_samples, start=10):
+        hl_sheet.cell(row=row_idx, column=1, value=date).alignment = Alignment(vertical="top")
+        hl_sheet.cell(row=row_idx, column=2, value=title).alignment = Alignment(vertical="top")
+        hl_sheet.cell(row=row_idx, column=3, value=project).alignment = Alignment(vertical="top")
+        hl_sheet.cell(row=row_idx, column=4, value=body).alignment = Alignment(vertical="top", wrap_text=True)
+        hl_sheet.row_dimensions[row_idx].height = 40
+
+      hl_sheet.freeze_panes = "A10"
+      hl_sheet.column_dimensions["A"].width = 16
+      hl_sheet.column_dimensions["B"].width = 36
+      hl_sheet.column_dimensions["C"].width = 18
+      hl_sheet.column_dimensions["D"].width = 60
+
 
 def generate_dashboard(input_file: Path, output_dir: Path) -> None:
     df = pd.read_excel(input_file)
     mapped = map_columns(df)
     records = serialize_records(mapped)
+    highlights = parse_highlights(input_file)
 
     output_dir.mkdir(parents=True, exist_ok=True)
     html_path = output_dir / "risk_dashboard.html"
@@ -2137,7 +2838,10 @@ def generate_dashboard(input_file: Path, output_dir: Path) -> None:
     from datetime import datetime
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     stamp = f"v{VERSION} \u00b7 Generated on {timestamp}"
-    embedded_js = js_template(json.dumps(records, ensure_ascii=True, indent=2))
+    embedded_js = js_template(
+        json.dumps(records, ensure_ascii=True, indent=2),
+        json.dumps(highlights, ensure_ascii=True, indent=2),
+    )
     html = html_template(embedded_js).replace(">--</span>", f">{stamp}</span>", 1)
     html_path.write_text(html, encoding="utf-8")
 
