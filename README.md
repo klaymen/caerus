@@ -107,9 +107,13 @@ Date format recommendation:
 - Search across ID/title/description/owner/project/mitigation
 - Sort by clicking table headers
 - KPI cards including Average Risk Score
+- Mitigation Health gauge showing coverage of High+ severity risks
 - Tooltip explanations for key fields and metrics
-- Row detail panel for full risk context
+- Row detail panel for full risk context with Opportunity pill for opportunity items
+- Configurable column visibility (Risk ID, Owner, and Identified Date hidden by default)
+- Dark mode support
 - Download filtered results as CSV
+- Download full register as Excel (`.xlsx`) with Risk Register and Highlights sheets
 
 ## Command Reference
 
