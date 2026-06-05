@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 import argparse
 import hashlib
@@ -1430,15 +1430,15 @@ def html_template(embedded_js: str) -> str:
 
     <section class=\"surface filters\" id=\"section-filters\">
       <div class=\"filters-grid\">
-        <div class=\"field\"><label for=\"search\">Search</label><input id=\"search\" type=\"text\" placeholder=\"risk id, title, owner, mitigation\" /></div>
-        <div class=\"field\"><label for=\"project\">Project</label><select id=\"project\"></select></div>
+        <div class=\"field\"><label for=\"search\">Search <span class=\"tip\" tabindex=\"0\" title=\"Filter by risk ID, title, owner, or mitigation text. Supports partial matches.\" aria-label=\"Search help\">?</span></label><input id=\"search\" type=\"text\" placeholder=\"risk id, title, owner, mitigation\" /></div>
+        <div class=\"field\"><label for=\"project\">Project <span class=\"tip\" tabindex=\"0\" title=\"Narrow the list to a single project or initiative.\" aria-label=\"Project help\">?</span></label><select id=\"project\"></select></div>
         <div class=\"field\"><label for=\"severity\">Severity <span class=\"tip\" tabindex=\"0\" title=\"How serious the consequence is if the risk happens.\" aria-label=\"Severity help\">?</span></label><select id=\"severity\"></select></div>
         <div class=\"field\"><label for=\"impact\">Impact <span class=\"tip\" tabindex=\"0\" title=\"Primary area affected, such as financial, security, compliance, or schedule.\" aria-label=\"Impact help\">?</span></label><select id=\"impact\"></select></div>
         <div class=\"field\"><label for=\"probability\">Probability <span class=\"tip\" tabindex=\"0\" title=\"Likelihood that the risk event will occur.\" aria-label=\"Probability help\">?</span></label><select id=\"probability\"></select></div>
-        <div class=\"field\"><label for=\"status\">Status</label><select id=\"status\"></select></div>
-        <div class=\"field\"><label for=\"owner\">Owner</label><select id=\"owner\"></select></div>
-        <div class=\"field\"><label for=\"category\">Category</label><select id=\"category\"></select></div>
-        <div class=\"field\"><label for=\"trend\">Trend</label><select id=\"trend\"></select></div>
+        <div class=\"field\"><label for=\"status\">Status <span class=\"tip\" tabindex=\"0\" title=\"Current handling state: Open, In Progress, Mitigated, Resolved, or Closed.\" aria-label=\"Status help\">?</span></label><select id=\"status\"></select></div>
+        <div class=\"field\"><label for=\"owner\">Owner <span class=\"tip\" tabindex=\"0\" title=\"Person accountable for monitoring and responding to the risk.\" aria-label=\"Owner help\">?</span></label><select id=\"owner\"></select></div>
+        <div class=\"field\"><label for=\"category\">Category <span class=\"tip\" tabindex=\"0\" title=\"Domain the risk belongs to, e.g. Technology, Security, Legal, People.\" aria-label=\"Category help\">?</span></label><select id=\"category\"></select></div>
+        <div class=\"field\"><label for=\"trend\">Trend <span class=\"tip\" tabindex=\"0\" title=\"Direction the risk is moving: Worsening, Stable, or Improving.\" aria-label=\"Trend help\">?</span></label><select id=\"trend\"></select></div>
         <div class=\"field\"><label for=\"dateFrom\">Identified from <span class=\"tip\" tabindex=\"0\" title=\"Show risks identified on or after this date.\" aria-label=\"Identified from help\">?</span></label><input id=\"dateFrom\" type=\"date\" /></div>
         <div class=\"field\"><label for=\"dateTo\">Identified to <span class=\"tip\" tabindex=\"0\" title=\"Show risks identified on or before this date.\" aria-label=\"Identified to help\">?</span></label><input id=\"dateTo\" type=\"date\" /></div>
         <div class=\"field\"><label for=\"openOnly\">Open only <span class=\"tip\" tabindex=\"0\" title=\"When enabled, hides resolved, closed, and accepted risks.\" aria-label=\"Open only help\">?</span></label><select id=\"openOnly\"><option value=\"all\">All</option><option value=\"open\">Open only</option></select></div>
@@ -2768,12 +2768,82 @@ def create_sample_excel(path: Path) -> None:
         for col_idx, value in enumerate(row_data, start=1):
           cell = help_sheet.cell(row=row_idx, column=col_idx, value=value)
           cell.alignment = Alignment(vertical="top", wrap_text=True)
+        help_sheet.row_dimensions[row_idx].height = 30
 
-      help_sheet.freeze_panes = "A13"
       help_sheet.column_dimensions["A"].width = 20
-      help_sheet.column_dimensions["B"].width = 12
+      help_sheet.column_dimensions["B"].width = 44
       help_sheet.column_dimensions["C"].width = 34
       help_sheet.column_dimensions["D"].width = 46
+
+      # ── Severity guide ────────────────────────────────────────────────────
+      sev_section_row = start_row + len(field_rows) + 3  # 2 blank rows after field table
+      help_sheet[f"A{sev_section_row}"] = "Severity Levels – Quick Guide"
+      help_sheet[f"A{sev_section_row}"].font = Font(bold=True)
+      help_sheet[f"A{sev_section_row}"].fill = section_fill
+      help_sheet[f"A{sev_section_row}"].alignment = Alignment(vertical="center")
+      help_sheet.merge_cells(f"A{sev_section_row}:D{sev_section_row}")
+
+      sev_header_row = sev_section_row + 1
+      for col_idx, title in enumerate(["Level", "Meaning", "Example Scenario"], start=1):
+        cell = help_sheet.cell(row=sev_header_row, column=col_idx, value=title)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+      severity_guide_rows = [
+        ("Critical",  "Severe, potentially irreversible impact on operations, finances, or safety",
+         "Data breach exposing customer PII; complete production outage; regulatory shutdown order"),
+        ("Very High", "Major impact affecting multiple teams or significant business functions",
+         "Key system down for several hours; contract penalty triggered; multi-week schedule slip"),
+        ("High",      "Significant impact on a team or business area requiring prompt attention",
+         "Single service degraded; compliance gap identified; sprint velocity drop >30%"),
+        ("Medium",    "Moderate impact, manageable within normal operations",
+         "Minor feature delay; minor cost overrun <5%; temporary workaround in place"),
+        ("Low",       "Negligible or cosmetic impact with little business consequence",
+         "Documentation gap; minor UI bug; low-urgency process inefficiency"),
+      ]
+      for row_offset, (level, meaning, example) in enumerate(severity_guide_rows, start=sev_header_row + 1):
+        help_sheet.cell(row=row_offset, column=1, value=level).alignment = Alignment(vertical="top", wrap_text=True)
+        help_sheet.cell(row=row_offset, column=2, value=meaning).alignment = Alignment(vertical="top", wrap_text=True)
+        cell = help_sheet.cell(row=row_offset, column=3, value=example)
+        cell.alignment = Alignment(vertical="top", wrap_text=True)
+        help_sheet.merge_cells(f"C{row_offset}:D{row_offset}")
+        help_sheet.row_dimensions[row_offset].height = 52
+
+      # ── Probability guide ─────────────────────────────────────────────────
+      prob_section_row = sev_header_row + len(severity_guide_rows) + 2
+      help_sheet[f"A{prob_section_row}"] = "Probability Levels – Quick Guide"
+      help_sheet[f"A{prob_section_row}"].font = Font(bold=True)
+      help_sheet[f"A{prob_section_row}"].fill = section_fill
+      help_sheet[f"A{prob_section_row}"].alignment = Alignment(vertical="center")
+      help_sheet.merge_cells(f"A{prob_section_row}:D{prob_section_row}")
+
+      prob_header_row = prob_section_row + 1
+      for col_idx, title in enumerate(["Level", "Meaning", "Example Scenario"], start=1):
+        cell = help_sheet.cell(row=prob_header_row, column=col_idx, value=title)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+      probability_guide_rows = [
+        ("VeryHigh", "Almost certain – expected to occur in most circumstances (>80%)",
+         "Known vulnerability actively exploited in the wild; vendor EOL already passed"),
+        ("High",     "Likely – will probably occur in many circumstances (60–80%)",
+         "Dependency upgrade overdue; stakeholder delays are a recurring pattern"),
+        ("Medium",   "Possible – might occur at some point (40–60%)",
+         "New regulation under consultation; third-party SLA borderline performance"),
+        ("Low",      "Unlikely – could occur but not expected (20–40%)",
+         "Rare edge-case failure mode; low-traffic integration with minor instability history"),
+        ("VeryLow",  "Rare – may occur only in exceptional circumstances (<20%)",
+         "Black-swan external event; theoretical attack vector with no known active exploits"),
+      ]
+      for row_offset, (level, meaning, example) in enumerate(probability_guide_rows, start=prob_header_row + 1):
+        help_sheet.cell(row=row_offset, column=1, value=level).alignment = Alignment(vertical="top", wrap_text=True)
+        help_sheet.cell(row=row_offset, column=2, value=meaning).alignment = Alignment(vertical="top", wrap_text=True)
+        cell = help_sheet.cell(row=row_offset, column=3, value=example)
+        cell.alignment = Alignment(vertical="top", wrap_text=True)
+        help_sheet.merge_cells(f"C{row_offset}:D{row_offset}")
+        help_sheet.row_dimensions[row_offset].height = 52
 
       # ── Highlights sheet ─────────────────────────────────────────────────
       hl_sheet = workbook.create_sheet("Highlights")
