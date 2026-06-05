@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 
 import argparse
 import hashlib
@@ -1537,6 +1537,17 @@ def html_template(embedded_js: str) -> str:
           </thead>
           <tbody id=\"riskTable\"></tbody>
         </table>
+        <table id=\"highlightsTableEl\" style=\"display:none\">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Title</th>
+              <th>Project</th>
+              <th>Body</th>
+            </tr>
+          </thead>
+          <tbody id=\"highlightsTable\"></tbody>
+        </table>
       </div>
       <aside class=\"drawer\" id=\"details\">
         <h2>Risk details</h2>
@@ -1608,13 +1619,15 @@ const els = {{
   projectExposure: document.getElementById(\"projectExposure\"),
   mitigationHealth: document.getElementById(\"mitigationHealth\"),
   table: document.getElementById(\"riskTable\"),
+  highlightsTable: document.getElementById(\"highlightsTable\"),
+  highlightsTableEl: document.getElementById(\"highlightsTableEl\"),
   details: document.getElementById(\"details\"),
   resultCount: document.getElementById(\"resultCount\"),
   typeTabs: document.getElementById(\"typeTabs\"),
   colToggleBtn: document.getElementById(\"colToggleBtn\"),
   colPanel: document.getElementById(\"colPanel\"),
   colToggleWrap: document.getElementById(\"colToggleWrap\"),
-  tableEl: document.querySelector(\".table-wrap table\"),
+  tableEl: document.getElementById(\"riskTable\") ? document.getElementById(\"riskTable\").closest(\"table\") : null,
 }};
 
 function normalize(v) {{
@@ -1744,12 +1757,16 @@ function applyFilters() {{
   // Highlights tab: use highlightsData with only the project filter applied.
   if (state.typeFilter === \"Highlights\") {{
     if (els.details) {{ els.details.style.display = \"none\"; state.active = null; }}
+    if (els.tableEl) els.tableEl.style.display = \"none\";
+    if (els.highlightsTableEl) els.highlightsTableEl.style.display = \"\";
     const proj = els.project ? els.project.value : \"\";
     const filtered = highlightsData.filter((h) => !proj || h.project === proj);
     renderHighlightsTable(filtered);
     els.resultCount.textContent = `${{filtered.length}} record${{filtered.length === 1 ? \"\" : \"s\"}}`;
     return;
   }}
+  if (els.tableEl) els.tableEl.style.display = \"\";
+  if (els.highlightsTableEl) els.highlightsTableEl.style.display = \"none\";
   if (els.details) els.details.style.display = \"\";
 
   const search = normalize(els.search.value);
@@ -2045,23 +2062,15 @@ function render(items) {{
 }}
 
 function renderHighlightsTable(items) {{
-  // Swap the thead to show highlight-specific columns.
-  const thead = els.table ? els.table.closest(\"table\").querySelector(\"thead tr\") : null;
-  if (thead) {{
-    thead.innerHTML = `
-      <th>Date</th>
-      <th>Title</th>
-      <th>Project</th>
-      <th>Body</th>
-    `;
-  }}
+  const tbody = els.highlightsTable;
+  if (!tbody) return;
   if (!items.length) {{
-    els.table.innerHTML = `<tr><td colspan=\"4\" class=\"empty\">No highlights match the current project filter.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan=\"4\" class=\"empty\">No highlights match the current project filter.</td></tr>`;
     return;
   }}
-  els.table.innerHTML = items.map((h) => `
+  tbody.innerHTML = items.map((h) => `
     <tr>
-      <td>${{h.date || \"-\"}}</td>
+      <td style=\"white-space:nowrap\">${{h.date || \"-\"}}</td>
       <td><strong>${{h.title || \"-\"}}</strong></td>
       <td>${{h.project || \"-\"}}</td>
       <td style=\"white-space:pre-wrap;font-size:0.82rem;color:var(--muted)\">${{h.body || \"-\"}}</td>
@@ -2384,6 +2393,10 @@ function wire() {{
         state.typeFilter = btn.dataset.type || \"all\";
         const isHighlights = state.typeFilter === \"Highlights\";
         if (els.colToggleWrap) els.colToggleWrap.style.display = isHighlights ? \"none\" : \"\";
+        if (!isHighlights) {{
+          if (els.tableEl) els.tableEl.style.display = \"\";
+          if (els.highlightsTableEl) els.highlightsTableEl.style.display = \"none\";
+        }}
         applyFilters();
         const tableSection = document.getElementById(\"section-table\");
         if (tableSection) tableSection.scrollIntoView({{ behavior: \"smooth\", block: \"start\" }});
